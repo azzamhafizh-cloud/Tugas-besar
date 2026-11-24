@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#11151b">
+  <title>AirWatch — IoT Air Quality Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="AirWatch beranda">
+        <span class="brand-mark"><span></span><span></span><span></span></span>
+        <span>airwatch<span class="brand-dot">.</span><small>ENVIRONMENTAL SYSTEM</small></span>
+      </a>
+      <div class="side-label">WORKSPACE</div>
+      <a class="nav-item active" href="#overview"><span class="nav-icon">▦</span> Overview</a>
+      <a class="nav-item" href="#analytics"><span class="nav-icon">⌁</span> Analytics</a>
+      <a class="nav-item" href="#alerts"><span class="nav-icon">◉</span> Alert history <span class="nav-count" id="navAlertCount">0</span></a>
+      <div class="sidebar-bottom">
+        <div class="connection-card">
+          <span class="connection-pulse"></span>
+          <div><strong>Simulator online</strong><small>Local demo mode</small></div>
+        </div>
+        <div class="user-mini"><div class="avatar">AW</div><div><strong>AirWatch Demo</strong><small>Administrator</small></div><span class="more">···</span></div>
+      </div>
+    </aside>
+
+    <main class="main-content" id="overview">
+      <header class="topbar">
+        <div><div class="eyebrow">ENVIRONMENT / MONITORING</div><h1>Air quality overview</h1></div>
+        <div class="top-actions">
+          <div class="live-pill"><span class="live-dot"></span> LIVE SIMULATION</div>
+          <div class="date-chip" id="dateNow">--</div>
+        </div>
+      </header>
+
+      <section class="status-banner safe" id="statusBanner" aria-live="polite">
+        <div class="status-symbol" id="statusSymbol">✓</div>
+        <div class="status-copy"><div class="status-kicker" id="statusKicker">AIR QUALITY STATUS</div><h2 id="statusTitle">BAIK / AMAN</h2><p id="statusMessage">Kondisi udara terpantau baik. Aktivitas di dalam ruangan dapat berjalan normal.</p></div>
+        <div class="status-side"><span class="status-label">CURRENT CONDITION</span><strong id="statusCondition">NORMAL</strong><small id="lastUpdated">Updated just now</small></div>
+      </section>
+
+      <section class="section-heading">
+        <div><div class="eyebrow">REAL-TIME TELEMETRY</div><h2>Environmental metrics</h2></div>
+        <div class="device-state" id="deviceState"><span class="device-indicator"></span><span><b id="deviceStateTitle">Perangkat normal</b><small id="deviceStateText">Seluruh sensor terbaca dengan baik</small></span></div>
+      </section>
+
+      <section class="metric-grid">
+        <article class="metric-card metric-aqi">
+          <div class="metric-top"><span class="metric-name">Air quality index</span><span class="metric-icon purple">◈</span></div>
+          <div class="metric-value"><strong id="aqiValue">32</strong><span class="metric-unit">AQI</span></div>
+          <div class="metric-foot"><span class="metric-tag" id="aqiTag">Good</span><span class="metric-range">0–50 baik</span></div>
+          <div class="mini-track"><span id="aqiBar" style="width:13%"></span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span class="metric-name">PM2.5</span><span class="metric-icon orange">✳</span></div>
+          <div class="metric-value"><strong id="pm25Value">8.4</strong><span class="metric-unit">µg/m³</span></div>
+          <div class="metric-foot"><span class="metric-tag" id="pm25Tag">Low</span><span class="metric-range">Partikel halus</span></div>
+          <div class="mini-track"><span id="pm25Bar" style="width:17%"></span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span class="metric-name">PM10</span><span class="metric-icon yellow">✳</span></div>
+          <div class="metric-value"><strong id="pm10Value">18.2</strong><span class="metric-unit">µg/m³</span></div>
+          <div class="metric-foot"><span class="metric-tag" id="pm10Tag">Low</span><span class="metric-range">Partikel kasar</span></div>
+          <div class="mini-track"><span id="pm10Bar" style="width:18%"></span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span class="metric-name">Temperature</span><span class="metric-icon blue">⌁</span></div>
+          <div class="metric-value"><strong id="tempValue">27.4</strong><span class="metric-unit">°C</span></div>
+          <div class="metric-foot"><span class="metric-tag neutral" id="tempTag">Comfortable</span><span class="metric-range">Ambient</span></div>
+          <div class="mini-track"><span id="tempBar" style="width:55%"></span></div>
+        </article>
+        <article class="metric-card">
+          <div class="metric-top"><span class="metric-name">Humidity</span><span class="metric-icon cyan">◌</span></div>
+          <div class="metric-value"><strong id="humidityValue">61</strong><span class="metric-unit">%RH</span></div>
+          <div class="metric-foot"><span class="metric-tag neutral" id="humidityTag">Normal</span><span class="metric-range">Relative humidity</span></div>
+          <div class="mini-track"><span id="humidityBar" style="width:61%"></span></div>
+        </article>
+      </section>
+
+      <section class="content-grid" id="analytics">
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><div class="eyebrow">LIVE DATA STREAM</div><h3>Air quality trend</h3></div><div class="chart-legend"><span><i class="legend-dot aqi-dot"></i>AQI</span><span><i class="legend-dot pm-dot"></i>PM2.5</span></div></div>
+          <div class="chart-wrap"><canvas id="trendChart" aria-label="Grafik tren AQI dan PM2.5" role="img"></canvas></div>
+          <div class="chart-footer"><span><i class="legend-line"></i>Data simulasi per 5 detik</span><span id="chartTimeRange">Last 60 seconds</span></div>
+        </article>
+        <article class="panel controls-panel">
+          <div class="panel-heading"><div><div class="eyebrow">DEMO CONTROLS</div><h3>Simulation mode</h3></div><span class="control-icon">⌘</span></div>
+          <p class="panel-desc">Ubah kondisi lingkungan untuk menguji respons indikator dan sistem peringatan.</p>
+          <button class="mode-button normal-button" id="normalBtn"><span class="mode-indicator"></span><span><strong>Normal condition</strong><small>Udara bersih dan stabil</small></span><span class="button-arrow">↗</span></button>
+          <button class="mode-button bad-button" id="badBtn"><span class="mode-indicator"></span><span><strong>Poor air condition</strong><small>Debu dan polutan meningkat</small></span><span class="button-arrow">↗</span></button>
+          <div class="device-diagnostics">
+            <div class="diagnostic-heading"><span class="diagnostic-icon">⌁</span><div><strong>Device diagnostics</strong><small>Uji kondisi perangkat dan pembacaan sensor</small></div></div>
+            <div class="diagnostic-status" id="diagnosticStatus"><span class="device-indicator"></span><div><strong id="diagnosticTitle">Perangkat berfungsi normal</strong><small id="diagnosticMessage">Tidak ditemukan error pada perangkat maupun sensor.</small></div></div>
+            <div class="diagnostic-actions">
+              <button class="diagnostic-button" id="sensorErrorBtn">Simulasi error sensor</button>
+              <button class="diagnostic-button" id="deviceErrorBtn">Simulasi error perangkat</button>
+              <button class="diagnostic-button restore" id="restoreDeviceBtn">Pulihkan perangkat</button>
+            </div>
+          </div>
+          <div class="simulation-note"><span>ⓘ</span> Data dihasilkan secara lokal. Belum terhubung ke sensor fisik.</div>
+        </article>
+      </section>
+
+      <section class="bottom-grid" id="alerts">
+        <article class="panel alert-panel">
+          <div class="panel-heading"><div><div class="eyebrow">EVENT MONITOR</div><h3>Alert history</h3></div><button class="text-button" id="clearAlerts">Clear history</button></div>
+          <div class="alert-list" id="alertList"><div class="empty-state"><span>✓</span><strong>No alerts yet</strong><small>Perubahan status peringatan akan muncul di sini.</small></div></div>
+        </article>
+        <article class="panel recommendation-panel">
+          <div class="panel-heading"><div><div class="eyebrow">SMART SUGGESTION</div><h3>Recommended action</h3></div><span class="sparkle">✧</span></div>
+          <div class="recommendation-content"><div class="recommendation-icon" id="recommendIcon">✦</div><div><strong id="recommendTitle">Pertahankan kondisi ruangan</strong><p id="recommendText">Pastikan sirkulasi udara berjalan baik dan lakukan pemantauan secara berkala.</p></div></div>
+          <div class="recommendation-foot"><span class="tiny-green"></span> Recommendation based on current readings</div>
+        </article>
+      </section>
+      <footer><span>© 2026 AIRWATCH MONITORING</span><span>IoT dashboard prototype <b>v1.0.0</b></span></footer>
+    </main>
+  </div>
+  <script src="js/app.js"></script>
+</body>
+</html>
