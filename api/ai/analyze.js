@@ -118,7 +118,7 @@ Jika data tidak cukup, jelaskan keterbatasannya.
     return res.status(200).json({
       success: true,
       feature: "AI Monitoring",
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite",
       totalData: sensorData.length,
       latestData: sensorData[0],
       analysis: analysis,
