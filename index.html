@@ -543,6 +543,18 @@ function showAIError(statusId, resultId, error) {
   $(resultId).textContent = '';
 }
 
+// Merapikan format jawaban AI agar mudah dibaca dan tidak menampilkan
+// penanda Markdown seperti pagar atau bintang.
+function formatAIText(value) {
+  return String(value ?? '')
+    .replace(/^\\s*#{1,6}\\s*/gm, '')
+    .replace(/\\*\\*(.*?)\\*\\*/gs, '$1')
+    .replace(/__(.*?)__/gs, '$1')
+    .replace(/\\*(.*?)\\*/gs, '$1')
+    .replace(/^\\s*[-*]\\s+/gm, '• ')
+    .trim();
+}
+
 $('btnAiAnalyze').addEventListener('click', async () => {
   const button = $('btnAiAnalyze');
   setAIButtonLoading(button, true, 'Jalankan Monitoring');
@@ -552,7 +564,7 @@ $('btnAiAnalyze').addEventListener('click', async () => {
     const result = await callAIEndpoint('/api/ai/analyze', {});
     $('aiAnalyzeStatus').textContent = `Berhasil · ${result.totalData ?? '-'} data sensor`;
     $('aiAnalyzeResult').textContent =
-      result.analysis || result.message || 'Analisis berhasil, tetapi teks analisis tidak tersedia.';
+      formatAIText(result.analysis || result.message || 'Analisis berhasil, tetapi teks analisis tidak tersedia.');
   } catch (error) {
     showAIError('aiAnalyzeStatus', 'aiAnalyzeResult', error);
   } finally {
@@ -576,7 +588,7 @@ $('btnAiAnomaly').addEventListener('click', async () => {
        'bg-amber-100 text-amber-800');
     $('aiAnomalyStatus').textContent = `Pemeriksaan selesai · ${result.totalData ?? '-'} data sensor`;
     $('aiAnomalyResult').textContent =
-      result.explanation || result.message || 'Pemeriksaan selesai.';
+      formatAIText(result.explanation || result.message || 'Pemeriksaan selesai.');
   } catch (error) {
     showAIError('aiAnomalyStatus', 'aiAnomalyResult', error);
   } finally {
@@ -602,11 +614,11 @@ $('btnAiPredict').addEventListener('click', async () => {
         `Prediksi 30 menit ke depan\\n` +
         `Suhu: ${t.current}°C → ${t.predicted}°C (${t.change > 0 ? '+' : ''}${t.change}°C)\\n` +
         `Kelembapan: ${h.current}% → ${h.predicted}% (${h.change > 0 ? '+' : ''}${h.change}%)\\n\\n` +
-        (result.explanation || '');
+        formatAIText(result.explanation || '');
     } else {
       $('aiPredictResult').textContent =
-        result.explanation || result.message ||
-        'Riwayat sensor belum mencukupi untuk membuat prediksi.';
+        formatAIText(result.explanation || result.message ||
+        'Riwayat sensor belum mencukupi untuk membuat prediksi.');
     }
   } catch (error) {
     showAIError('aiPredictStatus', 'aiPredictResult', error);
@@ -628,7 +640,7 @@ $('aiAssistantForm').addEventListener('submit', async event => {
     const result = await callAIEndpoint('/api/ai/assistant', { question });
     $('aiAssistantStatus').textContent = `Jawaban tersedia · ${result.model || 'AI Assistant'}`;
     $('aiAssistantAnswer').textContent =
-      result.answer || 'AI tidak memberikan jawaban.';
+      formatAIText(result.answer || 'AI tidak memberikan jawaban.');
   } catch (error) {
     showAIError('aiAssistantStatus', 'aiAssistantAnswer', error);
   } finally {
