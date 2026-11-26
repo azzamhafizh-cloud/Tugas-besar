@@ -43,6 +43,36 @@ function calculateRegression(points, horizonMinutes) {
   };
 }
 
+// Mengubah timestamp menjadi WIB
+function formatWIB(timestamp) {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Waktu tidak valid";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+
+  const values = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      values[part.type] = part.value;
+    }
+  }
+
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second} WIB`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
@@ -101,7 +131,8 @@ export default async function handler(req, res) {
         requiredData: 10,
         message: "Minimal 10 data sensor valid diperlukan.",
         predictions: null,
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        generatedAtWib: formatWIB(new Date().toISOString())
       });
     }
 
@@ -114,6 +145,23 @@ export default async function handler(req, res) {
     const historyDurationMinutes = (lastTime - firstTime) / 60000;
 
     const sufficientHistory = historyDurationMinutes >= 60;
+
+    const latest = validData[validData.length - 1];
+    const latestTime = new Date(latest.created_at);
+
+    const latestDataWib = {
+      ...latest,
+      created_at: formatWIB(latest.created_at)
+    };
+
+    // Waktu target prediksi 30 menit ke depan
+    const predictionTargetTime = new Date(
+      latestTime.getTime() + 30 * 60000
+    );
+
+    const predictionTargetAtWib = formatWIB(
+      predictionTargetTime.toISOString()
+    );
 
     // 4. Jika riwayat kurang dari 60 menit, jangan membuat prediksi
     if (!sufficientHistory) {
@@ -130,11 +178,14 @@ export default async function handler(req, res) {
         requiredHistoryMinutes: 60,
         sufficientHistory: false,
         predictions: null,
-        latestData: validData[validData.length - 1],
+        latestData: latest,
+        latestDataWib,
+        predictionTargetAtWib,
         explanation:
           "Riwayat sensor belum mencapai 60 menit. " +
           "Sistem menunggu data tambahan agar prediksi lebih layak dihitung.",
-        generatedAt: new Date().toISOString()
+        generatedAt: new Date().toISOString(),
+        generatedAtWib: formatWIB(new Date().toISOString())
       });
     }
 
@@ -160,14 +211,29 @@ export default async function handler(req, res) {
       30
     );
 
-    // 7. Minta Gemini menjelaskan hasil perhitungan
+    // 7. Siapkan riwayat sensor dengan waktu WIB untuk AI
+    const historyWib = validData.map(item => ({
+      id: item.id,
+      device_id: item.device_id,
+      temperature: item.temperature,
+      humidity: item.humidity,
+      created_at: formatWIB(item.created_at)
+    }));
+
+    // 8. Minta Gemini menjelaskan hasil perhitungan
     const prompt = `
 Kamu adalah AI Prediction AirWatch.
 
 Jelaskan hasil prediksi berdasarkan regresi linear
 yang sudah dihitung oleh sistem.
 
-Data prediksi:
+Data terbaru:
+${JSON.stringify(latestDataWib, null, 2)}
+
+Riwayat sensor:
+${JSON.stringify(historyWib, null, 2)}
+
+Hasil prediksi:
 ${JSON.stringify({
   temperature: temperaturePrediction,
   humidity: humidityPrediction
@@ -176,16 +242,37 @@ ${JSON.stringify({
 Durasi riwayat: ${historyDurationMinutes.toFixed(2)} menit.
 Jumlah data: ${validData.length}.
 Target prediksi: 30 menit ke depan.
+Waktu data terbaru: ${latestDataWib.created_at}.
+Perkiraan waktu target prediksi: ${predictionTargetAtWib}.
+
+ATURAN WAKTU:
+- Semua timestamp menggunakan WIB (Asia/Jakarta).
+- Selalu gunakan WIB ketika menyebutkan waktu.
+- Jangan menyebut UTC.
+- Jangan mengubah atau mengonversi ulang timestamp.
+- Target prediksi adalah waktu yang sudah diberikan sistem.
+- Jangan menghitung ulang waktu target prediksi.
 
 Berikan penjelasan dalam bahasa Indonesia:
-1. Perkiraan suhu dan kelembapan.
-2. Tren perubahan.
+1. Perkiraan suhu dan kelembapan pada waktu target prediksi.
+2. Tren perubahan suhu dan kelembapan.
 3. Risiko dan rekomendasi.
 4. Keterbatasan prediksi.
 
-Jangan mengubah angka hasil perhitungan.
-Jangan menyebut RMSE sebagai jaminan akurasi masa depan.
-Jangan menganggap prediksi sebagai kepastian.
+GAYA BAHASA:
+- Gunakan bahasa Indonesia yang santai, natural, dan mudah dipahami.
+- Jangan terlalu formal atau seperti laporan ilmiah.
+- Jelaskan seperti sedang berbicara langsung dengan pengguna.
+- Hindari kalimat terlalu panjang dan istilah teknis yang tidak diperlukan.
+- Jangan gunakan Markdown seperti tanda pagar (#) atau tanda bintang (*).
+- Gunakan penomoran biasa jika diperlukan.
+
+ATURAN ANALISIS:
+- Jangan mengubah angka hasil perhitungan.
+- Jangan menyebut RMSE sebagai jaminan akurasi masa depan.
+- Jangan menganggap prediksi sebagai kepastian.
+- Jangan mengarang data.
+- Jika data tidak cukup atau hasil kurang meyakinkan, jelaskan keterbatasannya.
 `;
 
     const aiResponse = await fetch(
@@ -228,7 +315,7 @@ Jangan menganggap prediksi sebagai kepastian.
       .join("")
       .trim();
 
-    // 8. Kirim hasil prediksi
+    // 9. Kirim hasil prediksi
     return res.status(200).json({
       success: true,
       feature: "AI Prediction",
@@ -245,9 +332,12 @@ Jangan menganggap prediksi sebagai kepastian.
         temperature: temperaturePrediction,
         humidity: humidityPrediction
       },
-      latestData: validData[validData.length - 1],
+      latestData: latest,
+      latestDataWib,
+      predictionTargetAtWib,
       explanation: explanation || "Penjelasan AI tidak tersedia.",
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      generatedAtWib: formatWIB(new Date().toISOString())
     });
 
   } catch (error) {
