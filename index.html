@@ -323,203 +323,820 @@
   <footer class="px-6 pb-6 text-xs text-zinc-400">AirWatch · Dashboard Monitoring IoT · ESP32 + DHT22</footer>
 </div>
 
-<script>
-/* =====================================================================
-   AIRWATCH – LOGIKA DASHBOARD
-   Bagian: 1) State  2) Util  3) Chart  4) updateDashboardUI (INTI)
-           5) DATA ASLI DARI API VERCEL  6) Aktuator  7) Analitik
-           8) Pengaturan  9) Navigasi & Init
-   ===================================================================== */
-const $ = id => document.getElementById(id);
-const MAXPTS = 20, MAXLOG = 25;
-const DEFAULTS = { warn: 100, danger: 200, temp: 32 };
 
-/* ---------- 1) STATE ---------- */
-const S = {
-  limits: { temp: 50, pm25: 35 },
-  labels: [], T: [], H: [], PM1: [], PM25: [], PM10: [], GAS: [],
-  log: [], latest: null,
-  stats: { nT: 0, sumT: 0, minT: Infinity, maxT: -Infinity, nH: 0, sumH: 0, minH: Infinity, maxH: -Infinity }
+/* ============================================================
+   AIRWATCH DASHBOARD
+   Multi-sensor: DHT22, PMS5003, MQ135
+   Data: Supabase melalui Vercel API
+   ============================================================ */
+
+const $ = id => document.getElementById(id);
+
+const MAXPTS = 20;
+const MAXLOG = 25;
+
+const SENSOR_CONFIG = {
+  temperature: { label: 'Suhu', unit: '°C', digits: 1 },
+  humidity: { label: 'Kelembapan', unit: '%', digits: 1 },
+  pm1: { label: 'PM1.0', unit: 'µg/m³', digits: 1 },
+  pm25: { label: 'PM2.5', unit: 'µg/m³', digits: 1 },
+  pm10: { label: 'PM10', unit: 'µg/m³', digits: 1 },
+  gas_raw: { label: 'Gas MQ135', unit: 'ADC', digits: 0 }
 };
 
-/* ---------- 2) UTIL ---------- */
-const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-const numeric = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value)) ? Number(value) : null;
-const fmtTime = d => new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d).replace(/\./g, ':');
+const S = {
+  limits: { temp: 50, pm25: 35 },
+  labels: [],
+  series: {
+    temperature: [],
+    humidity: [],
+    pm1: [],
+    pm25: [],
+    pm10: [],
+    gas_raw: []
+  },
+  log: [],
+  latest: null,
+  charts: {},
+  stats: {}
+};
+
+let lastRecordId = null;
+let lastRecordTimestamp = null;
+
+/* =========================
+   1. UTILITAS
+========================= */
+
+const numeric = value => {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
+
+const clamp = (value, min, max) =>
+  Math.min(max, Math.max(min, value));
+
+function fmtTime(date) {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).format(date).replace(/\./g, ':');
+}
+
+function formatDate(date) {
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  }).format(date);
+}
+
 function tickClock() {
-  const d = new Date();
-  $('clock').textContent = fmtTime(d) + ' WIB';
-  $('dateStr').textContent = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+  const now = new Date();
+
+  $('clock').textContent = fmtTime(now) + ' WIB';
+  $('dateStr').textContent = formatDate(now);
 }
-function setOnline(on, message) {
-  $('statusText').textContent = message || (on ? 'Online - ESP32-AIRWATCH' : 'Offline - ESP32-AIRWATCH');
-  $('statusDot').className = 'w-2 h-2 rounded-full ' + (on ? 'bg-zinc-900 pulse' : 'bg-zinc-400');
+
+function setOnline(online, message) {
+  $('statusText').textContent =
+    message || (online ? 'Online - ESP32-AIRWATCH' : 'Offline - ESP32-AIRWATCH');
+
+  $('statusDot').className =
+    'w-2 h-2 rounded-full ' +
+    (online ? 'bg-zinc-900 pulse' : 'bg-zinc-400');
 }
-function setMetric(id, value, digits = 1, suffix = '') {
-  $(id).textContent = value === null ? '--' : `${value.toFixed(digits)}${suffix}`;
+
+function setMetric(id, value, digits = 1) {
+  $(id).textContent =
+    value === null ? '--' : Number(value).toFixed(digits);
 }
+
+/*
+  Data lama dari firmware DHT22-only pernah mengirim
+  placeholder 0 untuk seluruh sensor tambahan.
+
+  Jika semua parameter tambahan dan AQI bernilai 0
+  dalam satu baris, baris tersebut dianggap data placeholder.
+
+  Nilai nol individual tetap dipertahankan jika ada
+  parameter tambahan lain yang memiliki nilai.
+*/
+function normalizeRow(row) {
+  const result = {};
+
+  for (const key of Object.keys(SENSOR_CONFIG)) {
+    result[key] = numeric(row[key]);
+  }
+
+  result.aqi = numeric(row.aqi);
+
+  const optionalKeys = ['pm1', 'pm25', 'pm10', 'gas_raw'];
+
+  const allOptionalZero = optionalKeys.every(
+    key => result[key] === 0
+  );
+
+  const aqiZero = result.aqi === 0;
+
+  if (allOptionalZero && aqiZero) {
+    optionalKeys.forEach(key => {
+      result[key] = null;
+    });
+
+    result.aqi = null;
+  }
+
+  return result;
+}
+
+/* =========================
+   2. STATUS KUALITAS UDARA
+========================= */
+
 function statusFor(row) {
-  if (row.temperature === null && row.pm25 === null) return 'Belum tersedia';
-  if (row.temperature !== null && row.temperature > S.limits.temp) return 'Waspada';
-  if (row.pm25 !== null && row.pm25 > S.limits.pm25) return 'Waspada';
+  const temperature = row.temperature;
+  const pm25 = row.pm25;
+
+  if (temperature === null && pm25 === null) {
+    return 'Belum tersedia';
+  }
+
+  if (
+    (temperature !== null && temperature > S.limits.temp) ||
+    (pm25 !== null && pm25 > S.limits.pm25)
+  ) {
+    return 'Waspada';
+  }
+
   return 'Aman';
 }
 
-/* ---------- 3) CHART ---------- */
-Chart.defaults.font.family = 'ui-sans-serif, system-ui, sans-serif';
+/* =========================
+   3. CHART
+========================= */
+
+Chart.defaults.font.family =
+  'ui-sans-serif, system-ui, sans-serif';
+
 Chart.defaults.color = '#71717a';
-let chTH, chPPM;
+
 function initCharts() {
-  chTH = new Chart($('chartTH'), {
+  S.charts.temperature = new Chart($('chartTH'), {
     type: 'line',
-    data: { labels: S.labels, datasets: [
-      { label: 'Suhu (°C)', data: S.T, borderColor: '#09090b', backgroundColor: '#09090b', tension: .35, pointRadius: 2, borderWidth: 2, yAxisID: 'y' },
-      { label: 'Kelembapan (%)', data: S.H, borderColor: '#a1a1aa', backgroundColor: '#a1a1aa', borderDash: [5, 4], tension: .35, pointRadius: 2, borderWidth: 2, yAxisID: 'y1' }
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 250 }, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6 } }, y: { position: 'left', suggestedMin: 15, suggestedMax: 40, grid: { color: '#f4f4f5' }, title: { display: true, text: '°C' } }, y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: '%' } } } }
+    data: {
+      labels: S.labels,
+      datasets: [
+        {
+          label: 'Suhu (°C)',
+          data: S.series.temperature,
+          borderColor: '#09090b',
+          backgroundColor: '#09090b',
+          tension: 0.35,
+          pointRadius: 2,
+          borderWidth: 2,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Kelembapan (%)',
+          data: S.series.humidity,
+          borderColor: '#a1a1aa',
+          backgroundColor: '#a1a1aa',
+          borderDash: [5, 4],
+          tension: 0.35,
+          pointRadius: 2,
+          borderWidth: 2,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 12 }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { maxTicksLimit: 6 }
+        },
+        y: {
+          position: 'left',
+          suggestedMin: 15,
+          suggestedMax: 40,
+          grid: { color: '#f4f4f5' },
+          title: {
+            display: true,
+            text: '°C'
+          }
+        },
+        y1: {
+          position: 'right',
+          min: 0,
+          max: 100,
+          grid: { drawOnChartArea: false },
+          title: {
+            display: true,
+            text: '%'
+          }
+        }
+      }
+    }
   });
-  chPPM = new Chart($('chartPPM'), {
+
+  S.charts.particulate = new Chart($('chartPPM'), {
     type: 'line',
-    data: { labels: S.labels, datasets: [
-      { label: 'PM1.0', data: S.PM1, borderColor: '#52525b', tension: .3, pointRadius: 2, spanGaps: false },
-      { label: 'PM2.5', data: S.PM25, borderColor: '#09090b', tension: .3, pointRadius: 2, spanGaps: false },
-      { label: 'PM10', data: S.PM10, borderColor: '#a1a1aa', tension: .3, pointRadius: 2, spanGaps: false }
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 250 }, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6 } }, y: { beginAtZero: true, grid: { color: '#f4f4f5' }, title: { display: true, text: 'µg/m³' } } } }
+    data: {
+      labels: S.labels,
+      datasets: [
+        {
+          label: 'PM1.0',
+          data: S.series.pm1,
+          borderColor: '#52525b',
+          tension: 0.3,
+          pointRadius: 2,
+          spanGaps: false
+        },
+        {
+          label: 'PM2.5',
+          data: S.series.pm25,
+          borderColor: '#09090b',
+          tension: 0.3,
+          pointRadius: 2,
+          spanGaps: false
+        },
+        {
+          label: 'PM10',
+          data: S.series.pm10,
+          borderColor: '#a1a1aa',
+          tension: 0.3,
+          pointRadius: 2,
+          spanGaps: false
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { boxWidth: 12 }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { maxTicksLimit: 6 }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: '#f4f4f5' },
+          title: {
+            display: true,
+            text: 'µg/m³'
+          }
+        }
+      }
+    }
   });
 }
+
+function updateCharts() {
+  Object.values(S.charts).forEach(chart => chart.update());
+}
+
 function clearSeries() {
-  [S.labels,S.T,S.H,S.PM1,S.PM25,S.PM10,S.GAS].forEach(a => a.length = 0);
+  S.labels.length = 0;
+
+  Object.values(S.series).forEach(series => {
+    series.length = 0;
+  });
+
   S.log = [];
-  S.stats = { nT: 0, sumT: 0, minT: Infinity, maxT: -Infinity, nH: 0, sumH: 0, minH: Infinity, maxH: -Infinity };
+  S.stats = {};
 }
+
+/* =========================
+   4. STATISTIK
+========================= */
+
+function calculateStats(values) {
+  const valid = values.filter(value => value !== null);
+
+  if (!valid.length) {
+    return {
+      count: 0,
+      min: null,
+      avg: null,
+      max: null
+    };
+  }
+
+  const sum = valid.reduce((total, value) => total + value, 0);
+
+  return {
+    count: valid.length,
+    min: Math.min(...valid),
+    avg: sum / valid.length,
+    max: Math.max(...valid)
+  };
+}
+
+function createAdditionalStatsCards() {
+  const grid = document.querySelector('#view-analytics > div');
+
+  if (!grid || $('extraSensorStats')) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.id = 'extraSensorStats';
+  wrapper.className = 'grid grid-cols-1 md:grid-cols-3 gap-4';
+
+  const sensors = [
+    ['PM1.0 (µg/m³)', 'sPM1'],
+    ['PM2.5 (µg/m³)', 'sPM25'],
+    ['PM10 (µg/m³)', 'sPM10']
+  ];
+
+  sensors.forEach(([label, prefix]) => {
+    const card = document.createElement('div');
+
+    card.className =
+      'bg-white border border-zinc-200 rounded-lg shadow-sm p-5';
+
+    card.innerHTML = `
+      <h3 class="font-semibold text-sm">${label}</h3>
+      <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+        <div>
+          <p class="text-xs text-zinc-500">Min</p>
+          <p id="${prefix}min" class="text-xl font-semibold num">-</p>
+        </div>
+        <div>
+          <p class="text-xs text-zinc-500">Rata-rata</p>
+          <p id="${prefix}avg" class="text-xl font-semibold num">-</p>
+        </div>
+        <div>
+          <p class="text-xs text-zinc-500">Maks</p>
+          <p id="${prefix}max" class="text-xl font-semibold num">-</p>
+        </div>
+      </div>
+    `;
+
+    wrapper.appendChild(card);
+  });
+
+  grid.after(wrapper);
+}
+
+function updateStatCard(prefix, stats) {
+  const format = value =>
+    value === null ? '-' : value.toFixed(1);
+
+  $(prefix + 'min').textContent = format(stats.min);
+  $(prefix + 'avg').textContent = format(stats.avg);
+  $(prefix + 'max').textContent = format(stats.max);
+}
+
+function renderStats() {
+  const keys = Object.keys(SENSOR_CONFIG);
+
+  keys.forEach(key => {
+    S.stats[key] = calculateStats(S.series[key]);
+  });
+
+  updateStatCard('sT', S.stats.temperature);
+  updateStatCard('sH', S.stats.humidity);
+  updateStatCard('sP', S.stats.gas_raw);
+
+  updateStatCard('sPM1', S.stats.pm1);
+  updateStatCard('sPM25', S.stats.pm25);
+  updateStatCard('sPM10', S.stats.pm10);
+
+  const summary = keys.map(key => {
+    return `${SENSOR_CONFIG[key].label}: ${S.stats[key].count} data`;
+  });
+
+  $('sCount').textContent = summary.join(' · ');
+}
+
+/* =========================
+   5. DASHBOARD UTAMA
+========================= */
+
 function updateDashboardUI(row) {
-  const t = numeric(row.temperature), h = numeric(row.humidity);
-  // Nilai nol pada kolom sensor tambahan di data lama berasal dari placeholder firmware DHT22-only.
-  // Sampai firmware PMS5003/MQ135 benar-benar mengirim pembacaan, nol tersebut ditampilkan sebagai belum tersedia.
-  const cleanOptional = key => { const value = numeric(row[key]); return value === 0 ? null : value; };
-  const pm1 = cleanOptional('pm1'), pm25 = cleanOptional('pm25'), pm10 = cleanOptional('pm10');
-  const gas = cleanOptional('gas_raw'), aqi = cleanOptional('aqi');
-  const date = row.created_at ? new Date(row.created_at) : new Date();
+  const values = normalizeRow(row);
+
+  const t = values.temperature;
+  const h = values.humidity;
+  const pm1 = values.pm1;
+  const pm25 = values.pm25;
+  const pm10 = values.pm10;
+  const gas = values.gas_raw;
+  const aqi = values.aqi;
+
+  const date = new Date(row.created_at);
   const label = fmtTime(date);
-  setMetric('vTemp', t); setMetric('vHum', h); setMetric('vPM1', pm1, 1); setMetric('vPM25', pm25, 1); setMetric('vPM10', pm10, 1);
-  setMetric('vGas', gas, 0); setMetric('vAqi', aqi, 0);
-  $('dTemp').textContent = t === null ? 'Sensor DHT22 belum tersedia' : 'Data asli DHT22';
-  $('dHum').textContent = h === null ? 'Sensor DHT22 belum tersedia' : 'Data asli DHT22';
-  $('dPM1').textContent = pm1 === null ? 'Belum tersedia · PMS5003' : 'Data asli PMS5003';
-  $('dPM25').textContent = pm25 === null ? 'Belum tersedia · PMS5003' : 'Data asli PMS5003';
-  $('dPM10').textContent = pm10 === null ? 'Belum tersedia · PMS5003' : 'Data asli PMS5003';
-  $('dGas').textContent = gas === null ? 'Belum tersedia · MQ135' : 'Nilai ADC mentah, bukan PPM';
-  $('dAqi').textContent = aqi === null ? 'Belum tersedia dari perangkat' : 'Nilai AQI dari perangkat';
-  $('bTemp').style.width = t === null ? '0%' : clamp(t / S.limits.temp * 100, 0, 100) + '%';
-  $('bHum').style.width = h === null ? '0%' : clamp(h, 0, 100) + '%';
-  $('bGas').style.width = gas === null ? '0%' : clamp(gas / 4095 * 100, 0, 100) + '%';
-  $('bAqi').style.width = aqi === null ? '0%' : clamp(aqi / 500 * 100, 0, 100) + '%';
+
+  setMetric('vTemp', t);
+  setMetric('vHum', h);
+  setMetric('vPM1', pm1);
+  setMetric('vPM25', pm25);
+  setMetric('vPM10', pm10);
+  setMetric('vGas', gas, 0);
+  setMetric('vAqi', aqi, 0);
+
+  $('dTemp').textContent =
+    t === null ? 'Sensor DHT22 belum tersedia' : 'Data asli DHT22';
+
+  $('dHum').textContent =
+    h === null ? 'Sensor DHT22 belum tersedia' : 'Data asli DHT22';
+
+  $('dPM1').textContent =
+    pm1 === null ? 'Belum tersedia · PMS5003' : 'Data asli PMS5003';
+
+  $('dPM25').textContent =
+    pm25 === null ? 'Belum tersedia · PMS5003' : 'Data asli PMS5003';
+
+  $('dPM10').textContent =
+    pm10 === null ? 'Belum tersedia · PMS5003' : 'Data asli PMS5003';
+
+  $('dGas').textContent =
+    gas === null ? 'Belum tersedia · MQ135' : 'Nilai ADC mentah, bukan PPM';
+
+  $('dAqi').textContent =
+    aqi === null ? 'Belum tersedia dari perangkat' : 'Nilai AQI dari perangkat';
+
+  $('bTemp').style.width =
+    t === null ? '0%' :
+    clamp(t / S.limits.temp * 100, 0, 100) + '%';
+
+  $('bHum').style.width =
+    h === null ? '0%' : clamp(h, 0, 100) + '%';
+
+  $('bGas').style.width =
+    gas === null ? '0%' : clamp(gas / 4095 * 100, 0, 100) + '%';
+
+  $('bAqi').style.width =
+    aqi === null ? '0%' : clamp(aqi / 500 * 100, 0, 100) + '%';
+
   $('tempLimitLabel').textContent = `${S.limits.temp}°C`;
-  $('aqiCat').textContent = aqi === null ? 'Kategori: belum tersedia' : `Kategori: ${aqi <= 50 ? 'Baik' : aqi <= 100 ? 'Sedang' : aqi <= 150 ? 'Tidak sehat bagi kelompok sensitif' : aqi <= 200 ? 'Tidak sehat' : aqi <= 300 ? 'Sangat tidak sehat' : 'Berbahaya'}`;
 
-  const status = statusFor({ temperature: t, pm25 });
+  $('aqiCat').textContent = aqi === null
+    ? 'Kategori: belum tersedia'
+    : `Kategori: ${
+        aqi <= 50 ? 'Baik' :
+        aqi <= 100 ? 'Sedang' :
+        aqi <= 150 ? 'Tidak sehat bagi kelompok sensitif' :
+        aqi <= 200 ? 'Tidak sehat' :
+        aqi <= 300 ? 'Sangat tidak sehat' :
+        'Berbahaya'
+      }`;
+
+  const status = statusFor(values);
   const neutral = status === 'Belum tersedia';
-  $('banner').className = 'rounded-lg border p-4 sm:p-5 flex items-start gap-4 ' + (status === 'Waspada' ? 'bg-amber-50 border-amber-300 text-amber-950' : 'bg-white border-zinc-200 text-zinc-900');
-  $('bannerIcon').className = 'w-10 h-10 rounded-full grid place-items-center text-lg font-bold flex-shrink-0 ' + (status === 'Waspada' ? 'bg-amber-200 text-amber-900' : 'bg-zinc-100 text-zinc-900');
-  $('bannerIcon').textContent = status === 'Waspada' ? '!' : (neutral ? '–' : '✓');
-  $('bannerTitle').textContent = neutral ? 'Data parameter untuk penilaian belum tersedia' : (status === 'Aman' ? 'Parameter terukur berada di bawah batas peringatan' : 'Peringatan: batas parameter terlampaui');
-  $('bannerMsg').textContent = `Data terakhir ${label} WIB. Suhu ${t === null ? 'belum tersedia' : t + ' °C'}, PM2.5 ${pm25 === null ? 'belum tersedia' : pm25 + ' µg/m³'}. Parameter kosong tidak digunakan dalam penilaian.`;
 
-  S.labels.push(label); S.T.push(t); S.H.push(h); S.PM1.push(pm1); S.PM25.push(pm25); S.PM10.push(pm10); S.GAS.push(gas);
-  if (S.labels.length > MAXPTS) [S.labels,S.T,S.H,S.PM1,S.PM25,S.PM10,S.GAS].forEach(a => a.shift());
-  chTH.update(); chPPM.update();
-  const st = S.stats;
-  if (t !== null) { st.nT++; st.sumT += t; st.minT = Math.min(st.minT,t); st.maxT = Math.max(st.maxT,t); }
-  if (h !== null) { st.nH++; st.sumH += h; st.minH = Math.min(st.minH,h); st.maxH = Math.max(st.maxH,h); }
-  S.log.unshift({ time: label, temp: t, hum: h, pm1, pm25, pm10, gas, aqi, status });
-  if (S.log.length > MAXLOG) S.log.pop();
-  renderStats(); renderLog(); renderDiagnostics(row);
+  $('banner').className =
+    'rounded-lg border p-4 sm:p-5 flex items-start gap-4 ' +
+    (status === 'Waspada'
+      ? 'bg-amber-50 border-amber-300 text-amber-950'
+      : 'bg-white border-zinc-200 text-zinc-900');
+
+  $('bannerIcon').className =
+    'w-10 h-10 rounded-full grid place-items-center text-lg font-bold flex-shrink-0 ' +
+    (status === 'Waspada'
+      ? 'bg-amber-200 text-amber-900'
+      : 'bg-zinc-100 text-zinc-900');
+
+  $('bannerIcon').textContent =
+    status === 'Waspada' ? '!' : neutral ? '–' : '✓';
+
+  $('bannerTitle').textContent = neutral
+    ? 'Data parameter untuk penilaian belum tersedia'
+    : status === 'Aman'
+      ? 'Parameter terukur berada di bawah batas peringatan'
+      : 'Peringatan: batas parameter terlampaui';
+
+  $('bannerMsg').textContent =
+    `Data terakhir ${label} WIB. ` +
+    `Suhu ${t === null ? 'belum tersedia' : t + ' °C'}, ` +
+    `PM2.5 ${pm25 === null ? 'belum tersedia' : pm25 + ' µg/m³'}. ` +
+    'Parameter kosong tidak digunakan dalam penilaian.';
+
+  S.labels.push(label);
+
+  Object.keys(S.series).forEach(key => {
+    S.series[key].push(values[key]);
+  });
+
+  if (S.labels.length > MAXPTS) {
+    S.labels.shift();
+
+    Object.values(S.series).forEach(series => {
+      series.shift();
+    });
+  }
+
+  updateCharts();
+
+  S.log.unshift({
+    time: label,
+    ...values,
+    status
+  });
+
+  if (S.log.length > MAXLOG) {
+    S.log.pop();
+  }
+
   S.latest = row;
+
+  renderStats();
+  renderLog();
+  renderDiagnostics(row);
 }
 
-/* ---------- 5) DATA ASLI DARI VERCEL API ---------- */
-let lastRecordId = null, lastRecordTimestamp = null;
+/* =========================
+   6. DIAGNOSTIK SENSOR
+========================= */
+
+function renderDiagnostics(row) {
+  const values = normalizeRow(row);
+
+  const fields = [
+    ['DHT22 · Suhu', values.temperature],
+    ['DHT22 · Kelembapan', values.humidity],
+    ['PMS5003 · PM1.0', values.pm1],
+    ['PMS5003 · PM2.5', values.pm25],
+    ['PMS5003 · PM10', values.pm10],
+    ['MQ135 · ADC', values.gas_raw],
+    ['AQI', values.aqi]
+  ];
+
+  $('sensorDiagnostics').innerHTML = fields.map(([name, value]) => `
+    <div class="flex items-center justify-between border-b border-zinc-100 py-2">
+      <span>${name}</span>
+      <span class="text-xs ${
+        value === null ? 'text-zinc-400' : 'text-zinc-900'
+      }">
+        ${value === null ? 'Belum tersedia' : 'Data diterima'}
+      </span>
+    </div>
+    <script>
+  `).join('');
+}
+
+/* =========================
+   7. AMBIL DATA API
+========================= */
+
 async function fetchRealData() {
   try {
-    const response = await fetch('/api/telemetry?limit=20', { cache: 'no-store' });
-    if (!response.ok) throw new Error(`API telemetry mengembalikan HTTP ${response.status}`);
+    const response = await fetch(
+      '/api/telemetry?limit=20',
+      { cache: 'no-store' }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `API telemetry mengembalikan HTTP ${response.status}`
+      );
+    }
+
     const result = await response.json();
-    const rows = Array.isArray(result) ? result : result.data;
-    if (!Array.isArray(rows) || !rows.length) throw new Error('Belum ada data telemetry di Supabase');
-    const ordered = rows.slice().filter(r => r && r.created_at).reverse();
+
+    const rows = Array.isArray(result)
+      ? result
+      : result.data;
+
+    if (!Array.isArray(rows) || !rows.length) {
+      throw new Error('Belum ada data telemetry di Supabase');
+    }
+
     const newest = rows[0];
+
+    if (!newest || !newest.created_at) {
+      throw new Error('Data terbaru tidak memiliki timestamp');
+    }
+
+    const ordered = rows
+      .filter(row =>
+        row &&
+        row.created_at &&
+        Number.isFinite(new Date(row.created_at).getTime())
+      )
+      .slice()
+      .reverse();
+
     const newestId = newest.id ?? newest.created_at;
+
     if (newestId !== lastRecordId) {
       clearSeries();
-      ordered.forEach(row => updateDashboardUI(row));
+
+      ordered.forEach(updateDashboardUI);
+
       lastRecordId = newestId;
-      lastRecordTimestamp = newest.created_at || null;
+      lastRecordTimestamp = newest.created_at;
     }
-    const ageMs = lastRecordTimestamp ? Date.now() - new Date(lastRecordTimestamp).getTime() : Infinity;
-    if (ageMs > 60000) setOnline(false, 'Data terlambat · periksa perangkat');
-    else setOnline(true, 'Online - ESP32-AIRWATCH');
-    $('apiDebug').textContent = `API berhasil · ${rows.length} baris diterima · ID terbaru ${newest.id ?? '-'} · pembaruan ${fmtTime(new Date())} WIB`;
+
+    const ageMs =
+      Date.now() - new Date(lastRecordTimestamp).getTime();
+
+    if (ageMs > 60000) {
+      setOnline(false, 'Data terlambat · periksa perangkat');
+    } else {
+      setOnline(true, 'Online - ESP32-AIRWATCH');
+    }
+
+    $('apiDebug').textContent =
+      `API berhasil · ${rows.length} baris diterima · ` +
+      `ID terbaru ${newest.id ?? '-'} · ` +
+      `pembaruan ${fmtTime(new Date())} WIB`;
+
   } catch (error) {
-    setOnline(false);
-    $('bannerTitle').textContent = 'Data perangkat belum tersedia';
-    $('bannerMsg').textContent = error.message + '. Periksa koneksi ESP32, Edge Function, dan API Vercel.';
-    $('apiDebug').textContent = 'API gagal: ' + error.message;
+    setOnline(false, 'Offline - koneksi data bermasalah');
+
+    $('bannerTitle').textContent =
+      'Data perangkat belum tersedia';
+
+    $('bannerMsg').textContent =
+      error.message +
+      '. Periksa koneksi ESP32, Edge Function, dan API Vercel.';
+
+    $('apiDebug').textContent =
+      'API gagal: ' + error.message;
   }
 }
 
-/* ---------- 6) STATUS SENSOR ---------- */
-function renderDiagnostics(row) {
-  const fields = [
-    ['DHT22 · Suhu', numeric(row.temperature)], ['DHT22 · Kelembapan', numeric(row.humidity)],
-    ['PMS5003 · PM1.0', numeric(row.pm1)], ['PMS5003 · PM2.5', numeric(row.pm25)], ['PMS5003 · PM10', numeric(row.pm10)], ['MQ135 · ADC', numeric(row.gas_raw)], ['AQI', numeric(row.aqi)]
-  ];
-  $('sensorDiagnostics').innerHTML = fields.map(([name,value]) => `<div class="flex items-center justify-between border-b border-zinc-100 py-2"><span>${name}</span><span class="text-xs ${value === null ? 'text-zinc-400' : 'text-zinc-900'}">${value === null ? 'Belum tersedia' : 'Data diterima'}</span></div>`).join('');
-}
-fetchRealData();
-setInterval(fetchRealData, 5000);
+/* =========================
+   8. TABEL LOG
+========================= */
 
-/* ---------- 7) ANALITIK ---------- */
-function renderStats() {
-  const s = S.stats, f = (v, n) => n && Number.isFinite(v) ? v.toFixed(1) : '-';
-  $('sTmin').textContent = f(s.minT,s.nT); $('sTavg').textContent = f(s.sumT / s.nT,s.nT); $('sTmax').textContent = f(s.maxT,s.nT);
-  $('sHmin').textContent = f(s.minH,s.nH); $('sHavg').textContent = f(s.sumH / s.nH,s.nH); $('sHmax').textContent = f(s.maxH,s.nH);
-  $('sPmin').textContent = '-'; $('sPavg').textContent = '-'; $('sPmax').textContent = '-';
-  $('sCount').textContent = `Statistik suhu: ${s.nT} data · kelembapan: ${s.nH} data. Data partikulat dan gas akan ditampilkan saat tersedia.`;
+function updateLogTableHeader() {
+  const header = document.querySelector('#view-analytics thead tr');
+
+  if (!header) return;
+
+  header.innerHTML = `
+    <th class="px-5 py-2.5 font-medium">Waktu (WIB)</th>
+    <th class="px-3 py-2.5 font-medium">Suhu</th>
+    <th class="px-3 py-2.5 font-medium">Kelembapan</th>
+    <th class="px-3 py-2.5 font-medium">PM1.0</th>
+    <th class="px-3 py-2.5 font-medium">PM2.5</th>
+    <th class="px-3 py-2.5 font-medium">PM10</th>
+    <th class="px-3 py-2.5 font-medium">Gas ADC</th>
+    <th class="px-3 py-2.5 font-medium">AQI</th>
+    <th class="px-3 py-2.5 font-medium">Status</th>
+  `;
 }
+
 function renderLog() {
-  const f = $('logFilter').value;
-  const rows = S.log.filter(r => f === 'Semua' || r.status === f);
-  $('logBody').innerHTML = rows.length ? rows.map(r => `<tr class="hover:bg-zinc-50">
-    <td class="px-5 py-2.5">${r.time}</td><td class="px-3 py-2.5">${r.temp === null ? '-' : r.temp.toFixed(1)}</td>
-    <td class="px-3 py-2.5">${r.hum === null ? '-' : r.hum.toFixed(1)}</td><td class="px-3 py-2.5">${r.gas === null ? '-' : r.gas}</td>
-    <td class="px-3 py-2.5">${r.aqi === null ? '-' : r.aqi}</td><td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${r.status === 'Waspada' ? 'bg-amber-100 text-amber-900' : 'border border-zinc-300 text-zinc-700'}">${r.status}</span></td></tr>`).join('') : `<tr><td colspan="6" class="px-5 py-8 text-center text-zinc-500">Belum ada data untuk filter ini.</td></tr>`;
+  const filter = $('logFilter').value;
+
+  const rows = S.log.filter(row =>
+    filter === 'Semua' || row.status === filter
+  );
+
+  const format = value =>
+    value === null ? '-' : value;
+
+  $('logBody').innerHTML = rows.length
+    ? rows.map(row => `
+      <tr class="hover:bg-zinc-50">
+        <td class="px-5 py-2.5">${row.time}</td>
+        <td class="px-3 py-2.5">${format(row.temperature)}</td>
+        <td class="px-3 py-2.5">${format(row.humidity)}</td>
+        <td class="px-3 py-2.5">${format(row.pm1)}</td>
+        <td class="px-3 py-2.5">${format(row.pm25)}</td>
+        <td class="px-3 py-2.5">${format(row.pm10)}</td>
+        <td class="px-3 py-2.5">${format(row.gas_raw)}</td>
+        <td class="px-3 py-2.5">${format(row.aqi)}</td>
+        <td class="px-3 py-2.5">
+          <span class="px-2 py-0.5 rounded-full text-xs font-medium ${
+            row.status === 'Waspada'
+              ? 'bg-amber-100 text-amber-900'
+              : 'border border-zinc-300 text-zinc-700'
+          }">
+            ${row.status}
+          </span>
+        </td>
+      </tr>
+    `).join('')
+    : `
+      <tr>
+        <td colspan="9" class="px-5 py-8 text-center text-zinc-500">
+          Belum ada data untuk filter ini.
+        </td>
+      </tr>
+    `;
 }
+
 $('logFilter').addEventListener('change', renderLog);
+
 $('btnReset').addEventListener('click', () => {
-  if (!confirm('Bersihkan tampilan log pada sesi ini? Data di Supabase tidak akan dihapus.')) return;
-  S.log = []; renderLog();
-});
-$('btnCsv').addEventListener('click', () => {
-  if (!S.log.length) { alert('Belum ada data untuk diunduh.'); return; }
-  const headers = ['Waktu WIB','Suhu C','Kelembapan %','PM1 ugm3','PM2.5 ugm3','PM10 ugm3','Gas ADC','AQI','Status'];
-  const lines = [headers.join(',')];
-  S.log.slice().reverse().forEach(r => lines.push([r.time,r.temp,r.hum,r.pm1,r.pm25,r.pm10,r.gas,r.aqi,r.status].map(v => v ?? '').join(',')));
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob), a = document.createElement('a');
-  a.href = url; a.download = 'airwatch-telemetry.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  if (!confirm(
+    'Bersihkan tampilan log pada sesi ini? Data di Supabase tidak akan dihapus.'
+  )) return;
+
+  S.log = [];
+  renderLog();
 });
 
-/* ---------- 8) AI AIRWATCH: INTEGRASI ENDPOINT ---------- */
+$('btnCsv').addEventListener('click', () => {
+  if (!S.log.length) {
+    alert('Belum ada data untuk diunduh.');
+    return;
+  }
+
+  const headers = [
+    'Waktu WIB',
+    'Suhu C',
+    'Kelembapan %',
+    'PM1 ugm3',
+    'PM2.5 ugm3',
+    'PM10 ugm3',
+    'Gas ADC',
+    'AQI',
+    'Status'
+  ];
+
+  const lines = [headers.join(',')];
+
+  S.log.slice().reverse().forEach(row => {
+    const values = [
+      row.time,
+      row.temperature,
+      row.humidity,
+      row.pm1,
+      row.pm25,
+      row.pm10,
+      row.gas_raw,
+      row.aqi,
+      row.status
+    ];
+
+    lines.push(
+      values.map(value => {
+        if (value === null || value === undefined) return '';
+        return `"${String(value).replace(/"/g, '""')}"`;
+      }).join(',')
+    );
+  });
+
+  const blob = new Blob(
+    ['\uFEFF' + lines.join('\n')],
+    { type: 'text/csv;charset=utf-8;' }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = 'airwatch-telemetry.csv';
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+});
+
+/* =========================
+   9. AI AIRWATCH
+========================= */
+
 async function callAIEndpoint(path, body = {}) {
   const response = await fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json'
+    },
     body: JSON.stringify(body),
     cache: 'no-store'
   });
 
   let result;
+
   try {
     result = await response.json();
   } catch {
@@ -527,14 +1144,19 @@ async function callAIEndpoint(path, body = {}) {
   }
 
   if (!response.ok || result.success === false) {
-    throw new Error(result.message || `Permintaan gagal (HTTP ${response.status}).`);
+    throw new Error(
+      result.message ||
+      `Permintaan gagal (HTTP ${response.status}).`
+    );
   }
+
   return result;
 }
 
 function setAIButtonLoading(button, loading, normalText) {
   button.disabled = loading;
   button.textContent = loading ? 'Memproses...' : normalText;
+
   button.classList.toggle('opacity-60', loading);
   button.classList.toggle('cursor-not-allowed', loading);
 }
@@ -544,141 +1166,398 @@ function showAIError(statusId, resultId, error) {
   $(resultId).textContent = '';
 }
 
+/* AI MONITORING */
+
 $('btnAiAnalyze').addEventListener('click', async () => {
   const button = $('btnAiAnalyze');
+
   setAIButtonLoading(button, true, 'Jalankan Monitoring');
-  $('aiAnalyzeStatus').textContent = 'Mengambil data dan meminta analisis AI...';
+
+  $('aiAnalyzeStatus').textContent =
+    'Mengambil data dan meminta analisis AI...';
+
   $('aiAnalyzeResult').textContent = '';
+
   try {
-    const result = await callAIEndpoint('/api/ai/analyze', {});
-    $('aiAnalyzeStatus').textContent = `Berhasil · ${result.totalData ?? '-'} data sensor`;
+    const result = await callAIEndpoint(
+      '/api/ai/analyze',
+      {}
+    );
+
+    $('aiAnalyzeStatus').textContent =
+      `Berhasil · ${result.totalData ?? '-'} data sensor`;
+
     $('aiAnalyzeResult').textContent =
-      result.analysis || result.message || 'Analisis berhasil, tetapi teks analisis tidak tersedia.';
+      result.analysis ||
+      result.message ||
+      'Analisis berhasil, tetapi teks tidak tersedia.';
+
   } catch (error) {
-    showAIError('aiAnalyzeStatus', 'aiAnalyzeResult', error);
+    showAIError(
+      'aiAnalyzeStatus',
+      'aiAnalyzeResult',
+      error
+    );
   } finally {
-    setAIButtonLoading(button, false, 'Jalankan Monitoring');
+    setAIButtonLoading(
+      button,
+      false,
+      'Jalankan Monitoring'
+    );
   }
 });
+
+/* AI ANOMALY */
 
 $('btnAiAnomaly').addEventListener('click', async () => {
   const button = $('btnAiAnomaly');
+
   setAIButtonLoading(button, true, 'Periksa Anomali');
-  $('aiAnomalyStatus').textContent = 'Memeriksa pola data sensor...';
+
+  $('aiAnomalyStatus').textContent =
+    'Memeriksa pola data sensor...';
+
   $('aiAnomalyResult').textContent = '';
+
   try {
-    const result = await callAIEndpoint('/api/ai/anomaly', {});
+    const result = await callAIEndpoint(
+      '/api/ai/anomaly',
+      {}
+    );
+
     const status = result.status || 'STATUS TIDAK DIKETAHUI';
+
     const badge = $('aiAnomalyBadge');
+
     badge.textContent = status;
-    badge.className = 'text-xs rounded-full px-2 py-1 ' +
-      (status === 'NORMAL' ? 'bg-green-100 text-green-800' :
-       status === 'ANOMALY' ? 'bg-red-100 text-red-800' :
-       'bg-amber-100 text-amber-800');
-    $('aiAnomalyStatus').textContent = `Pemeriksaan selesai · ${result.totalData ?? '-'} data sensor`;
+
+    badge.className =
+      'text-xs rounded-full px-2 py-1 ' +
+      (
+        status === 'NORMAL'
+          ? 'bg-green-100 text-green-800'
+          : status === 'ANOMALY'
+            ? 'bg-red-100 text-red-800'
+            : 'bg-amber-100 text-amber-800'
+      );
+
+    $('aiAnomalyStatus').textContent =
+      `Pemeriksaan selesai · ${result.totalData ?? '-'} data sensor`;
+
     $('aiAnomalyResult').textContent =
-      result.explanation || result.message || 'Pemeriksaan selesai.';
+      result.explanation ||
+      result.message ||
+      'Pemeriksaan selesai.';
+
   } catch (error) {
-    showAIError('aiAnomalyStatus', 'aiAnomalyResult', error);
+    showAIError(
+      'aiAnomalyStatus',
+      'aiAnomalyResult',
+      error
+    );
   } finally {
-    setAIButtonLoading(button, false, 'Periksa Anomali');
+    setAIButtonLoading(
+      button,
+      false,
+      'Periksa Anomali'
+    );
   }
 });
+
+/* AI PREDICTION */
 
 $('btnAiPredict').addEventListener('click', async () => {
   const button = $('btnAiPredict');
-  setAIButtonLoading(button, true, 'Jalankan Prediksi');
-  $('aiPredictStatus').textContent = 'Memeriksa riwayat dan menghitung prediksi...';
-  $('aiPredictResult').textContent = '';
-  try {
-    const result = await callAIEndpoint('/api/ai/predict', {});
-    const status = result.status || (result.sufficientHistory ? 'PREDICTION_AVAILABLE' : 'INSUFFICIENT_DATA');
-    $('aiPredictStatus').textContent =
-      `${status} · ${result.totalData ?? '-'} data · riwayat ${result.historyDurationMinutes ?? 0} menit`;
 
-    if (result.predictions) {
-      const t = result.predictions.temperature;
-      const h = result.predictions.humidity;
-      $('aiPredictResult').textContent =
-        `Prediksi 30 menit ke depan\\n` +
-        `Suhu: ${t.current}°C → ${t.predicted}°C (${t.change > 0 ? '+' : ''}${t.change}°C)\\n` +
-        `Kelembapan: ${h.current}% → ${h.predicted}% (${h.change > 0 ? '+' : ''}${h.change}%)\\n\\n` +
-        (result.explanation || '');
+  setAIButtonLoading(button, true, 'Jalankan Prediksi');
+
+  $('aiPredictStatus').textContent =
+    'Memeriksa riwayat dan menghitung prediksi...';
+
+  $('aiPredictResult').textContent = '';
+
+  try {
+    const result = await callAIEndpoint(
+      '/api/ai/predict',
+      {}
+    );
+
+    const status =
+      result.status ||
+      (result.sufficientHistory
+        ? 'PREDICTION_AVAILABLE'
+        : 'INSUFFICIENT_DATA');
+
+    $('aiPredictStatus').textContent =
+      `${status} · ${result.totalData ?? '-'} data · ` +
+      `riwayat ${result.historyDurationMinutes ?? 0} menit`;
+
+    const predictions = result.predictions;
+
+    if (predictions) {
+      const lines = ['Prediksi 30 menit ke depan'];
+
+      Object.entries(SENSOR_CONFIG).forEach(([key, config]) => {
+        const prediction = predictions[key];
+
+        if (
+          !prediction ||
+          prediction.predicted === null ||
+          prediction.predicted === undefined
+        ) {
+          lines.push(`${config.label}: Data belum mencukupi`);
+          return;
+        }
+
+        const current = numeric(prediction.current);
+        const predicted = numeric(prediction.predicted);
+        const change = numeric(prediction.change);
+
+        if (predicted === null) {
+          lines.push(`${config.label}: Prediksi tidak tersedia`);
+          return;
+        }
+
+        const currentText =
+          current === null ? '--' : current.toFixed(config.digits);
+
+        const predictedText =
+          predicted.toFixed(config.digits);
+
+        const changeText =
+          change === null
+            ? ''
+            : ` (${change > 0 ? '+' : ''}${change.toFixed(config.digits)} ${config.unit})`;
+
+        lines.push(
+          `${config.label}: ${currentText} → ${predictedText} ${config.unit}${changeText}`
+        );
+      });
+
+      lines.push('');
+      lines.push(result.explanation || '');
+
+      $('aiPredictResult').textContent = lines.join('\n');
+
     } else {
       $('aiPredictResult').textContent =
-        result.explanation || result.message ||
+        result.explanation ||
+        result.message ||
         'Riwayat sensor belum mencukupi untuk membuat prediksi.';
     }
+
   } catch (error) {
-    showAIError('aiPredictStatus', 'aiPredictResult', error);
+    showAIError(
+      'aiPredictStatus',
+      'aiPredictResult',
+      error
+    );
   } finally {
-    setAIButtonLoading(button, false, 'Jalankan Prediksi');
+    setAIButtonLoading(
+      button,
+      false,
+      'Jalankan Prediksi'
+    );
   }
 });
+
+/* AI ASSISTANT */
 
 $('aiAssistantForm').addEventListener('submit', async event => {
   event.preventDefault();
+
   const button = $('btnAiAsk');
   const question = $('aiQuestion').value.trim();
+
   if (!question) return;
 
-  setAIButtonLoading(button, true, 'Kirim Pertanyaan');
-  $('aiAssistantStatus').textContent = 'AI sedang membaca data sensor...';
+  setAIButtonLoading(
+    button,
+    true,
+    'Kirim Pertanyaan'
+  );
+
+  $('aiAssistantStatus').textContent =
+    'AI sedang membaca data sensor...';
+
   $('aiAssistantAnswer').textContent = '';
+
   try {
-    const result = await callAIEndpoint('/api/ai/assistant', { question });
-    $('aiAssistantStatus').textContent = `Jawaban tersedia · ${result.model || 'AI Assistant'}`;
+    const result = await callAIEndpoint(
+      '/api/ai/assistant',
+      { question }
+    );
+
+    $('aiAssistantStatus').textContent =
+      `Jawaban tersedia · ${result.model || 'AI Assistant'}`;
+
     $('aiAssistantAnswer').textContent =
       result.answer || 'AI tidak memberikan jawaban.';
+
   } catch (error) {
-    showAIError('aiAssistantStatus', 'aiAssistantAnswer', error);
+    showAIError(
+      'aiAssistantStatus',
+      'aiAssistantAnswer',
+      error
+    );
   } finally {
-    setAIButtonLoading(button, false, 'Kirim Pertanyaan');
+    setAIButtonLoading(
+      button,
+      false,
+      'Kirim Pertanyaan'
+    );
   }
 });
 
-/* ---------- PENGATURAN BATAS ---------- */
+/* =========================
+   10. PENGATURAN BATAS
+========================= */
+
 function loadLimits() {
   try {
-    const saved = JSON.parse(localStorage.getItem('airwatchLimits') || '{}');
-    if (Number.isFinite(Number(saved.temp)) && saved.temp !== undefined) S.limits.temp = Number(saved.temp);
-    if (Number.isFinite(Number(saved.pm25)) && saved.pm25 !== undefined) S.limits.pm25 = Number(saved.pm25);
-  } catch {}
-  $('limitTemp').value = S.limits.temp; $('limitPM25').value = S.limits.pm25;
-  $('tempLimitLabel').textContent = `${S.limits.temp}°C`;
-}
-$('saveLimits').addEventListener('click', () => {
-  const temp = numeric($('limitTemp').value), pm25 = numeric($('limitPM25').value);
-  if (temp === null || pm25 === null || temp < -40 || temp > 80 || pm25 < 0 || pm25 > 1000) {
-    $('limitMessage').textContent = 'Nilai tidak valid. Suhu harus -40 sampai 80°C dan PM2.5 0 sampai 1000 µg/m³.'; return;
-  }
-  S.limits = { temp, pm25 };
-  localStorage.setItem('airwatchLimits', JSON.stringify(S.limits));
-  $('limitMessage').textContent = 'Batas berhasil disimpan di browser ini.';
-  $('tempLimitLabel').textContent = `${temp}°C`;
-  if (S.latest) { clearSeries(); lastRecordId = null; fetchRealData(); }
-});
-loadLimits();
+    const saved = JSON.parse(
+      localStorage.getItem('airwatchLimits') || '{}'
+    );
 
-/* ---------- 9) NAVIGASI & INIT ---------- */
-const TITLES = { dashboard: 'Monitoring & Kontrol Kualitas Udara', analytics: 'Analitik & Statistik Data', settings: 'Sumber Data Perangkat', ai: 'AI AirWatch' };
-function showView(v) {
-  ['dashboard', 'analytics', 'settings', 'ai'].forEach(n => $('view-' + n).classList.toggle('hidden', n !== v));
-  document.querySelectorAll('.nav-btn').forEach(b => b.dataset.active = b.dataset.view === v ? '1' : '0');
-  $('pageTitle').textContent = TITLES[v];
+    if (
+      saved.temp !== undefined &&
+      numeric(saved.temp) !== null
+    ) {
+      S.limits.temp = Number(saved.temp);
+    }
+
+    if (
+      saved.pm25 !== undefined &&
+      numeric(saved.pm25) !== null
+    ) {
+      S.limits.pm25 = Number(saved.pm25);
+    }
+
+  } catch {
+    // Gunakan batas default.
+  }
+
+  $('limitTemp').value = S.limits.temp;
+  $('limitPM25').value = S.limits.pm25;
+
+  $('tempLimitLabel').textContent =
+    `${S.limits.temp}°C`;
+}
+
+$('saveLimits').addEventListener('click', () => {
+  const temp = numeric($('limitTemp').value);
+  const pm25 = numeric($('limitPM25').value);
+
+  if (
+    temp === null ||
+    pm25 === null ||
+    temp < -40 ||
+    temp > 80 ||
+    pm25 < 0 ||
+    pm25 > 1000
+  ) {
+    $('limitMessage').textContent =
+      'Nilai tidak valid. Suhu harus -40 sampai 80°C dan PM2.5 0 sampai 1000 µg/m³.';
+
+    return;
+  }
+
+  S.limits = { temp, pm25 };
+
+  localStorage.setItem(
+    'airwatchLimits',
+    JSON.stringify(S.limits)
+  );
+
+  $('limitMessage').textContent =
+    'Batas berhasil disimpan di browser ini.';
+
+  $('tempLimitLabel').textContent =
+    `${temp}°C`;
+
+  if (S.latest) {
+    clearSeries();
+    lastRecordId = null;
+    fetchRealData();
+  }
+});
+
+/* =========================
+   11. NAVIGASI
+========================= */
+
+const TITLES = {
+  dashboard: 'Monitoring & Kontrol Kualitas Udara',
+  analytics: 'Analitik & Statistik Data',
+  settings: 'Sumber Data Perangkat',
+  ai: 'AI AirWatch'
+};
+
+function showView(view) {
+  ['dashboard', 'analytics', 'settings', 'ai'].forEach(name => {
+    $('view-' + name).classList.toggle(
+      'hidden',
+      name !== view
+    );
+  });
+
+  document.querySelectorAll('.nav-btn').forEach(button => {
+    button.dataset.active =
+      button.dataset.view === view ? '1' : '0';
+  });
+
+  $('pageTitle').textContent = TITLES[view];
+
   closeMenu();
-  if (v === 'dashboard') { chTH.resize(); chPPM.resize(); }
+
+  if (view === 'dashboard') {
+    S.charts.temperature.resize();
+    S.charts.particulate.resize();
+  }
+
   window.scrollTo({ top: 0 });
 }
-document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
-function openMenu() { $('sidebar').classList.remove('-translate-x-full'); $('overlay').classList.remove('hidden'); }
-function closeMenu() { $('sidebar').classList.add('-translate-x-full'); $('overlay').classList.add('hidden'); }
+
+document.querySelectorAll('.nav-btn').forEach(button => {
+  button.addEventListener('click', () => {
+    showView(button.dataset.view);
+  });
+});
+
+function openMenu() {
+  $('sidebar').classList.remove('-translate-x-full');
+  $('overlay').classList.remove('hidden');
+}
+
+function closeMenu() {
+  $('sidebar').classList.add('-translate-x-full');
+  $('overlay').classList.add('hidden');
+}
+
 $('menuBtn').addEventListener('click', openMenu);
 $('overlay').addEventListener('click', closeMenu);
 
+/* =========================
+   12. INISIALISASI
+========================= */
+
+createAdditionalStatsCards();
+updateLogTableHeader();
+
+loadLimits();
+
 initCharts();
-tickClock(); setInterval(tickClock, 1000);
-renderStats(); renderLog();
+
+tickClock();
+setInterval(tickClock, 1000);
+
+renderStats();
+renderLog();
+
+fetchRealData();
+
+setInterval(fetchRealData, 5000);
+
 </script>
 </body>
 </html>
