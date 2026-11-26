@@ -1,7 +1,619 @@
 <!doctype html>
 <html lang="id">
 <head>
-  <meta charset="utf-8"><!doctype html>
+  <meta charset="utf-8"><!doctype html><!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AeroSense · Monitoring &amp; Kontrol Kualitas Udara IoT</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  .num{font-variant-numeric:tabular-nums}
+  .sw{width:44px;height:24px;border-radius:99px;background:#d4d4d8;position:relative;transition:background .2s;flex-shrink:0}
+  .sw span{position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:99px;transition:transform .2s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+  .sw[data-on="1"]{background:#18181b}
+  .sw[data-on="1"] span{transform:translateX(20px)}
+  .sw:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #18181b;outline-offset:2px}
+  .nav-btn[data-active="1"]{background:#27272a;color:#fff}
+  .bar{transition:width .5s ease}
+  .chart-box{position:relative;height:260px}
+  @keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.35}}
+  .pulse{animation:pulseDot 1.4s infinite}
+  @media (prefers-reduced-motion:reduce){.pulse{animation:none}.bar,.sw,.sw span{transition:none}}
+</style>
+</head>
+<body class="bg-zinc-100 text-zinc-900 min-h-screen">
+
+<!-- Overlay mobile -->
+<div id="overlay" class="fixed inset-0 bg-zinc-950/60 z-30 hidden lg:hidden"></div>
+
+<!-- SIDEBAR -->
+<aside id="sidebar" class="fixed inset-y-0 left-0 w-64 bg-zinc-950 text-zinc-300 z-40 flex flex-col -translate-x-full lg:translate-x-0 transition-transform duration-200">
+  <div class="px-5 py-5 border-b border-zinc-800">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-md bg-white text-zinc-950 grid place-items-center font-bold">A</div>
+      <div>
+        <p class="text-white font-semibold leading-tight">AeroSense</p>
+        <p class="text-xs text-zinc-500">IoT Air Quality Platform</p>
+      </div>
+    </div>
+  </div>
+  <nav class="flex-1 p-3 space-y-1" aria-label="Navigasi utama">
+    <button class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-left hover:bg-zinc-800 hover:text-white transition-colors" data-view="dashboard" data-active="1">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M3 12l9-9 9 9M5 10v10h14V10"/></svg>Dashboard Utama
+    </button>
+    <button class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-left hover:bg-zinc-800 hover:text-white transition-colors" data-view="analytics" data-active="0">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>Analitik &amp; Statistik
+    </button>
+    <button class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-left hover:bg-zinc-800 hover:text-white transition-colors" data-view="settings" data-active="0">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Pengaturan &amp; Kalibrasi
+    </button>
+  </nav>
+  <div class="p-4 border-t border-zinc-800 text-xs text-zinc-500 space-y-1">
+    <p>Firmware <span class="text-zinc-300">v1.0.0</span></p>
+    <p>ESP32 · DHT22 · MQ135</p>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="lg:pl-64">
+  <!-- HEADER -->
+  <header class="bg-white border-b border-zinc-200 sticky top-0 z-20">
+    <div class="px-4 sm:px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <button id="menuBtn" class="lg:hidden p-2 -ml-2 rounded-md hover:bg-zinc-100" aria-label="Buka menu">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="min-w-0 flex-1">
+        <h1 id="pageTitle" class="text-base sm:text-lg font-semibold truncate">Monitoring &amp; Kontrol Kualitas Udara</h1>
+        <p class="text-xs text-zinc-500 truncate">Sistem IoT berbasis ESP32 · DHT22 · MQ135</p>
+      </div>
+      <div class="flex items-center gap-2 text-xs sm:text-sm border border-zinc-200 rounded-full px-3 py-1.5 bg-zinc-50">
+        <span id="statusDot" class="w-2 h-2 rounded-full bg-zinc-900 pulse"></span>
+        <span id="statusText" class="font-medium">Online - ESP32 Node 01</span>
+      </div>
+      <div class="text-right num leading-tight">
+        <p id="clock" class="text-sm font-semibold">--:--:-- WIB</p>
+        <p id="dateStr" class="text-xs text-zinc-500">-</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-sm text-zinc-600">Simulasi: <b id="simLabel">ON</b></span>
+        <button id="swSim" class="sw" data-on="1" role="switch" aria-checked="true" aria-label="Simulasi"><span></span></button>
+      </div>
+    </div>
+  </header>
+
+  <main class="p-4 sm:p-6 space-y-6">
+
+  <!-- ============ VIEW 1: DASHBOARD ============ -->
+  <section id="view-dashboard" class="space-y-6">
+    <!-- Banner -->
+    <div id="banner" class="rounded-lg border p-4 sm:p-5 flex items-start gap-4">
+      <div id="bannerIcon" class="w-10 h-10 rounded-full grid place-items-center text-lg font-bold flex-shrink-0">✓</div>
+      <div class="min-w-0">
+        <p id="bannerTitle" class="font-semibold">Kualitas udara aman</p>
+        <p id="bannerMsg" class="text-sm mt-0.5"></p>
+      </div>
+    </div>
+
+    <!-- Metric cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <div class="flex justify-between text-sm text-zinc-500"><span>Suhu Ruangan · DHT22</span><span>°C</span></div>
+        <p class="mt-3 text-4xl font-semibold num"><span id="vTemp">--</span><span class="text-xl text-zinc-400"> °C</span></p>
+        <p id="dTemp" class="text-xs mt-1 text-zinc-500 num">Δ -</p>
+        <div class="h-2 bg-zinc-100 rounded-full mt-4 overflow-hidden"><div id="bTemp" class="bar h-full bg-zinc-900 rounded-full" style="width:0"></div></div>
+        <p class="text-xs text-zinc-400 mt-1 flex justify-between"><span>0°</span><span>50°</span></p>
+      </div>
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <div class="flex justify-between text-sm text-zinc-500"><span>Kelembapan Udara · DHT22</span><span>%</span></div>
+        <p class="mt-3 text-4xl font-semibold num"><span id="vHum">--</span><span class="text-xl text-zinc-400"> %</span></p>
+        <p id="dHum" class="text-xs mt-1 text-zinc-500 num">Δ -</p>
+        <div class="h-2 bg-zinc-100 rounded-full mt-4 overflow-hidden"><div id="bHum" class="bar h-full bg-zinc-600 rounded-full" style="width:0"></div></div>
+        <p class="text-xs text-zinc-400 mt-1 flex justify-between"><span>0%</span><span>100%</span></p>
+      </div>
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <div class="flex justify-between text-sm text-zinc-500"><span>Gas / Polutan · MQ135</span><span>PPM</span></div>
+        <p class="mt-3 text-4xl font-semibold num"><span id="vPpm">--</span><span class="text-xl text-zinc-400"> ppm</span></p>
+        <p id="dPpm" class="text-xs mt-1 text-zinc-500 num">Δ -</p>
+        <div class="h-2 bg-zinc-100 rounded-full mt-4 overflow-hidden"><div id="bPpm" class="bar h-full bg-zinc-900 rounded-full" style="width:0"></div></div>
+        <p class="text-xs text-zinc-400 mt-1 flex justify-between"><span>0</span><span>500 ppm</span></p>
+      </div>
+      <div class="bg-zinc-950 text-white border border-zinc-800 rounded-lg shadow-sm p-5">
+        <div class="flex justify-between text-sm text-zinc-400"><span>Indeks Kualitas Udara</span><span>AQI</span></div>
+        <p class="mt-3 text-4xl font-semibold num"><span id="vAqi">--</span><span class="text-xl text-zinc-500"> /500</span></p>
+        <p id="dAqi" class="text-xs mt-1 text-zinc-400 num">Δ -</p>
+        <div class="h-2 bg-zinc-800 rounded-full mt-4 overflow-hidden"><div id="bAqi" class="bar h-full bg-white rounded-full" style="width:0"></div></div>
+        <p id="aqiCat" class="text-xs text-zinc-300 mt-1">Kategori: -</p>
+      </div>
+    </div>
+
+    <!-- Actuators -->
+    <div class="bg-white border border-zinc-200 rounded-lg shadow-sm">
+      <div class="px-5 py-4 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="font-semibold">Kontrol Aktuator &amp; Otomasi</h2>
+          <p class="text-xs text-zinc-500">Simulasi relay ESP32 (GPIO 26)</p>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-zinc-600">Mode Otomatis (Auto-Trigger)</span>
+          <button id="swAuto" class="sw" data-on="1" role="switch" aria-checked="true" aria-label="Mode otomatis"><span></span></button>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-5">
+        <div class="border border-zinc-200 rounded-md p-4 flex items-center justify-between gap-3">
+          <div><p class="font-medium text-sm">Exhaust Fan / Kipas Ventilasi</p><p id="stFan" class="text-xs text-zinc-500 mt-0.5">OFF</p></div>
+          <button id="swFan" class="sw" data-on="0" role="switch" aria-checked="false" aria-label="Exhaust fan"><span></span></button>
+        </div>
+        <div class="border border-zinc-200 rounded-md p-4 flex items-center justify-between gap-3">
+          <div><p class="font-medium text-sm">Air Purifier</p><p id="stPur" class="text-xs text-zinc-500 mt-0.5">OFF</p></div>
+          <button id="swPur" class="sw" data-on="0" role="switch" aria-checked="false" aria-label="Air purifier"><span></span></button>
+        </div>
+        <div class="border border-zinc-200 rounded-md p-4 flex items-center justify-between gap-3">
+          <div><p class="font-medium text-sm">Buzzer Alarm</p><p id="stBuz" class="text-xs text-zinc-500 mt-0.5">OFF</p></div>
+          <button id="swBuz" class="sw" data-on="0" role="switch" aria-checked="false" aria-label="Buzzer alarm"><span></span></button>
+        </div>
+      </div>
+      <div class="px-5 pb-5 flex flex-wrap items-center gap-3">
+        <button id="btnSpike" class="bg-zinc-950 text-white text-sm px-4 py-2 rounded-md hover:bg-zinc-800 transition-colors">Simulasi Lonjakan Gas (Test Alarm)</button>
+        <span id="autoNote" class="text-xs text-zinc-500">Auto-trigger aktif: kipas &amp; buzzer menyala otomatis jika PPM melewati ambang bahaya.</span>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <h2 class="font-semibold">Tren Suhu &amp; Kelembapan</h2>
+        <p class="text-xs text-zinc-500 mb-3">20 titik data terakhir</p>
+        <div class="chart-box"><canvas id="chartTH"></canvas></div>
+      </div>
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <h2 class="font-semibold">Fluktuasi Gas MQ135</h2>
+        <p class="text-xs text-zinc-500 mb-3">20 titik data terakhir · batang gelap = di atas ambang bahaya</p>
+        <div class="chart-box"><canvas id="chartPPM"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VIEW 2: ANALYTICS ============ -->
+  <section id="view-analytics" class="space-y-6 hidden">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <h3 class="font-semibold text-sm">Suhu (°C)</h3>
+        <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div><p class="text-xs text-zinc-500">Min</p><p id="sTmin" class="text-xl font-semibold num">-</p></div>
+          <div><p class="text-xs text-zinc-500">Rata-rata</p><p id="sTavg" class="text-xl font-semibold num">-</p></div>
+          <div><p class="text-xs text-zinc-500">Maks</p><p id="sTmax" class="text-xl font-semibold num">-</p></div>
+        </div>
+      </div>
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <h3 class="font-semibold text-sm">Kelembapan (%)</h3>
+        <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div><p class="text-xs text-zinc-500">Min</p><p id="sHmin" class="text-xl font-semibold num">-</p></div>
+          <div><p class="text-xs text-zinc-500">Rata-rata</p><p id="sHavg" class="text-xl font-semibold num">-</p></div>
+          <div><p class="text-xs text-zinc-500">Maks</p><p id="sHmax" class="text-xl font-semibold num">-</p></div>
+        </div>
+      </div>
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <h3 class="font-semibold text-sm">Gas MQ135 (PPM)</h3>
+        <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div><p class="text-xs text-zinc-500">Min</p><p id="sPmin" class="text-xl font-semibold num">-</p></div>
+          <div><p class="text-xs text-zinc-500">Rata-rata</p><p id="sPavg" class="text-xl font-semibold num">-</p></div>
+          <div><p class="text-xs text-zinc-500">Maks</p><p id="sPmax" class="text-xl font-semibold num">-</p></div>
+        </div>
+      </div>
+    </div>
+    <p id="sCount" class="text-xs text-zinc-500">Statistik dihitung dari 0 pembacaan pada sesi ini.</p>
+
+    <div class="bg-white border border-zinc-200 rounded-lg shadow-sm">
+      <div class="px-5 py-4 border-b border-zinc-200 flex flex-wrap items-center gap-3 justify-between">
+        <div><h2 class="font-semibold">Log Riwayat Pembacaan</h2><p class="text-xs text-zinc-500">Maksimal 25 data terbaru</p></div>
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="text-sm text-zinc-600" for="logFilter">Status</label>
+          <select id="logFilter" class="border border-zinc-300 rounded-md text-sm px-2 py-1.5 bg-white">
+            <option>Semua</option><option>Aman</option><option>Waspada</option><option>Bahaya</option>
+          </select>
+          <button id="btnCsv" class="bg-zinc-950 text-white text-sm px-3 py-1.5 rounded-md hover:bg-zinc-800">Download CSV</button>
+          <button id="btnReset" class="border border-zinc-300 text-sm px-3 py-1.5 rounded-md hover:bg-zinc-100">Reset Log</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-zinc-50 text-zinc-500 text-left">
+            <tr><th class="px-5 py-2.5 font-medium">Waktu (WIB)</th><th class="px-3 py-2.5 font-medium">Suhu</th><th class="px-3 py-2.5 font-medium">Kelembapan</th><th class="px-3 py-2.5 font-medium">PPM</th><th class="px-3 py-2.5 font-medium">AQI</th><th class="px-3 py-2.5 font-medium">Status</th></tr>
+          </thead>
+          <tbody id="logBody" class="divide-y divide-zinc-100 num"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ VIEW 3: SETTINGS ============ -->
+  <section id="view-settings" class="space-y-6 hidden">
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <h2 class="font-semibold">Ambang Batas Peringatan</h2>
+        <p class="text-xs text-zinc-500 mb-4">Perubahan langsung memengaruhi logika alarm dan auto-trigger.</p>
+        <div class="space-y-4">
+          <div>
+            <label for="thWarn" class="text-sm font-medium">Batas Waspada MQ135 (PPM)</label>
+            <input id="thWarn" type="number" min="10" max="900" value="100" class="mt-1 w-full border border-zinc-300 rounded-md px-3 py-2 text-sm num">
+          </div>
+          <div>
+            <label for="thDanger" class="text-sm font-medium">Batas Bahaya MQ135 (PPM)</label>
+            <input id="thDanger" type="number" min="20" max="1000" value="200" class="mt-1 w-full border border-zinc-300 rounded-md px-3 py-2 text-sm num">
+          </div>
+          <div>
+            <label for="thTemp" class="text-sm font-medium">Batas Suhu Panas (°C)</label>
+            <input id="thTemp" type="number" min="15" max="60" step="0.5" value="32" class="mt-1 w-full border border-zinc-300 rounded-md px-3 py-2 text-sm num">
+          </div>
+          <div class="flex items-center gap-3">
+            <button id="btnSaveTh" class="bg-zinc-950 text-white text-sm px-4 py-2 rounded-md hover:bg-zinc-800">Simpan Ambang Batas</button>
+            <button id="btnDefTh" class="border border-zinc-300 text-sm px-4 py-2 rounded-md hover:bg-zinc-100">Kembalikan Default</button>
+          </div>
+          <p id="thMsg" class="text-sm text-zinc-600 min-h-[1.25rem]"></p>
+        </div>
+      </div>
+
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <h2 class="font-semibold">Arsitektur &amp; Pinout Sistem</h2>
+        <p class="text-xs text-zinc-500 mb-4">Konfigurasi perangkat keras ESP32.</p>
+        <div class="overflow-x-auto border border-zinc-200 rounded-md">
+          <table class="w-full text-sm">
+            <thead class="bg-zinc-50 text-zinc-500 text-left"><tr><th class="px-3 py-2 font-medium">Komponen</th><th class="px-3 py-2 font-medium">Pin</th><th class="px-3 py-2 font-medium">Fungsi</th></tr></thead>
+            <tbody class="divide-y divide-zinc-100">
+              <tr><td class="px-3 py-2">DHT22</td><td class="px-3 py-2 font-medium">GPIO 4</td><td class="px-3 py-2 text-zinc-600">Suhu &amp; kelembapan (digital)</td></tr>
+              <tr><td class="px-3 py-2">MQ135</td><td class="px-3 py-2 font-medium">GPIO 34</td><td class="px-3 py-2 text-zinc-600">Gas/polutan (ADC1, input saja)</td></tr>
+              <tr><td class="px-3 py-2">Relay</td><td class="px-3 py-2 font-medium">GPIO 26</td><td class="px-3 py-2 text-zinc-600">Kipas / purifier / buzzer</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-5 space-y-2">
+          <label for="fbUrl" class="text-sm font-medium">URL Firebase Realtime Database</label>
+          <input id="fbUrl" type="url" placeholder="https://nama-proyek-default-rtdb.firebaseio.com" class="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm">
+          <p class="text-xs text-zinc-500">Struktur data yang dibaca: <code class="bg-zinc-100 px-1 rounded">/sensor.json</code> → <code class="bg-zinc-100 px-1 rounded">{"temp":28.5,"hum":60,"ppm":85}</code>. Matikan Simulasi agar data diambil dari Firebase.</p>
+          <div class="flex flex-wrap items-center gap-3">
+            <button id="btnSaveFb" class="bg-zinc-950 text-white text-sm px-4 py-2 rounded-md hover:bg-zinc-800">Simpan &amp; Uji Koneksi</button>
+            <span id="fbMsg" class="text-sm text-zinc-600"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+  <footer class="px-6 pb-6 text-xs text-zinc-400">AeroSense · Dashboard IoT Kualitas Udara · ESP32 + DHT22 + MQ135</footer>
+</div>
+
+<script>
+/* =====================================================================
+   AEROSENSE – LOGIKA DASHBOARD
+   Bagian: 1) State  2) Util  3) Chart  4) updateDashboardUI (INTI)
+           5) SIMULASI (ganti dengan Firebase)  6) Aktuator  7) Analitik
+           8) Pengaturan  9) Navigasi & Init
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const MAXPTS = 20, MAXLOG = 25;
+const DEFAULTS = { warn: 100, danger: 200, temp: 32 };
+
+/* ---------- 1) STATE ---------- */
+const S = {
+  sim: true, auto: true,
+  act: { fan: false, pur: false, buz: false },
+  autoFan: false, autoBuz: false,
+  th: { ...DEFAULTS },
+  prev: null, last: { temp: 28, hum: 60, ppm: 70 },
+  labels: [], T: [], H: [], P: [],
+  log: [],
+  st: { n: 0, sumT: 0, sumH: 0, sumP: 0, minT: Infinity, maxT: -Infinity, minH: Infinity, maxH: -Infinity, minP: Infinity, maxP: -Infinity },
+  spike: 0, firebaseUrl: '', fbTimer: null
+};
+
+/* ---------- 2) UTIL ---------- */
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const fmtTime = d => new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d).replace(/\./g, ':');
+
+function tickClock() {
+  const d = new Date();
+  $('clock').textContent = fmtTime(d) + ' WIB';
+  $('dateStr').textContent = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+}
+
+function setSwitch(el, on) { el.dataset.on = on ? '1' : '0'; el.setAttribute('aria-checked', on ? 'true' : 'false'); }
+
+/* AQI 0–500 dari PPM (interpolasi linear per segmen) */
+function calcAQI(ppm) {
+  const bp = [0, 50, 100, 200, 350, 600], aq = [0, 50, 100, 200, 300, 500];
+  if (ppm >= bp[bp.length - 1]) return 500;
+  for (let i = 1; i < bp.length; i++) {
+    if (ppm <= bp[i]) return Math.round(aq[i - 1] + (ppm - bp[i - 1]) * (aq[i] - aq[i - 1]) / (bp[i] - bp[i - 1]));
+  }
+  return 500;
+}
+function aqiCategory(a) {
+  return a <= 50 ? 'Baik' : a <= 100 ? 'Sedang' : a <= 200 ? 'Tidak Sehat' : a <= 300 ? 'Sangat Tidak Sehat' : 'Berbahaya';
+}
+function getStatus(ppm) { return ppm > S.th.danger ? 'Bahaya' : ppm >= S.th.warn ? 'Waspada' : 'Aman'; }
+
+function delta(el, cur, prev, unit, dec) {
+  if (prev === null) { el.textContent = 'Δ - (pembacaan pertama)'; return; }
+  const d = cur - prev;
+  const arrow = Math.abs(d) < 0.005 ? '■' : d > 0 ? '▲' : '▼';
+  el.textContent = `${arrow} ${d >= 0 ? '+' : ''}${d.toFixed(dec)} ${unit} dari sebelumnya`;
+}
+
+/* ---------- 3) CHART ---------- */
+Chart.defaults.font.family = 'ui-sans-serif, system-ui, sans-serif';
+Chart.defaults.color = '#71717a';
+let chTH, chPPM;
+function initCharts() {
+  chTH = new Chart($('chartTH'), {
+    type: 'line',
+    data: { labels: S.labels, datasets: [
+      { label: 'Suhu (°C)', data: S.T, borderColor: '#09090b', backgroundColor: '#09090b', tension: .35, pointRadius: 2, borderWidth: 2, yAxisID: 'y' },
+      { label: 'Kelembapan (%)', data: S.H, borderColor: '#a1a1aa', backgroundColor: '#a1a1aa', borderDash: [5, 4], tension: .35, pointRadius: 2, borderWidth: 2, yAxisID: 'y1' }
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 }, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6 } },
+        y: { position: 'left', suggestedMin: 15, suggestedMax: 40, grid: { color: '#f4f4f5' }, title: { display: true, text: '°C' } },
+        y1: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false }, title: { display: true, text: '%' } } } }
+  });
+  chPPM = new Chart($('chartPPM'), {
+    type: 'bar',
+    data: { labels: S.labels, datasets: [{ label: 'MQ135 (PPM)', data: S.P, backgroundColor: [], borderRadius: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      plugins: { legend: { display: false } },
+      scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6 } }, y: { beginAtZero: true, suggestedMax: 300, grid: { color: '#f4f4f5' }, title: { display: true, text: 'PPM' } } } }
+  });
+}
+function pushChart(label, t, h, p) {
+  S.labels.push(label); S.T.push(t); S.H.push(h); S.P.push(p);
+  if (S.labels.length > MAXPTS) { S.labels.shift(); S.T.shift(); S.H.shift(); S.P.shift(); }
+  chPPM.data.datasets[0].backgroundColor = S.P.map(v => v > S.th.danger ? '#09090b' : v >= S.th.warn ? '#71717a' : '#d4d4d8');
+  chTH.update(); chPPM.update();
+}
+
+/* =====================================================================
+   4) ★★★ FUNGSI INTI: updateDashboardUI(temp, hum, ppm) ★★★
+   Semua sumber data (simulasi ATAU Firebase) cukup memanggil fungsi ini.
+   ===================================================================== */
+function updateDashboardUI(temp, hum, ppm) {
+  temp = +temp; hum = +hum; ppm = +ppm;
+  if ([temp, hum, ppm].some(isNaN)) return;
+  const status = getStatus(ppm), aqi = calcAQI(ppm), p = S.prev;
+
+  // Kartu metrik + delta
+  $('vTemp').textContent = temp.toFixed(1); $('vHum').textContent = hum.toFixed(1);
+  $('vPpm').textContent = Math.round(ppm); $('vAqi').textContent = aqi;
+  delta($('dTemp'), temp, p ? p.temp : null, '°C', 1);
+  delta($('dHum'), hum, p ? p.hum : null, '%', 1);
+  delta($('dPpm'), ppm, p ? p.ppm : null, 'ppm', 0);
+  delta($('dAqi'), aqi, p ? p.aqi : null, 'poin', 0);
+  $('bTemp').style.width = clamp(temp / 50 * 100, 0, 100) + '%';
+  $('bHum').style.width = clamp(hum, 0, 100) + '%';
+  $('bPpm').style.width = clamp(ppm / 500 * 100, 0, 100) + '%';
+  $('bAqi').style.width = clamp(aqi / 500 * 100, 0, 100) + '%';
+  $('aqiCat').textContent = 'Kategori: ' + aqiCategory(aqi);
+  $('bTemp').className = 'bar h-full rounded-full ' + (temp > S.th.temp ? 'bg-zinc-950' : 'bg-zinc-500');
+
+  // Banner peringatan & rekomendasi
+  renderBanner(status, ppm, temp);
+
+  // Auto-trigger aktuator
+  applyAuto(ppm);
+
+  // Chart, statistik, log
+  const tm = fmtTime(new Date());
+  pushChart(tm, +temp.toFixed(1), +hum.toFixed(1), Math.round(ppm));
+  const st = S.st; st.n++; st.sumT += temp; st.sumH += hum; st.sumP += ppm;
+  st.minT = Math.min(st.minT, temp); st.maxT = Math.max(st.maxT, temp);
+  st.minH = Math.min(st.minH, hum); st.maxH = Math.max(st.maxH, hum);
+  st.minP = Math.min(st.minP, ppm); st.maxP = Math.max(st.maxP, ppm);
+  S.log.unshift({ time: tm, temp: +temp.toFixed(1), hum: +hum.toFixed(1), ppm: Math.round(ppm), aqi, status });
+  if (S.log.length > MAXLOG) S.log.pop();
+  renderStats(); renderLog();
+
+  S.prev = { temp, hum, ppm, aqi }; S.last = { temp, hum, ppm };
+}
+
+function renderBanner(status, ppm, temp) {
+  const b = $('banner'), ic = $('bannerIcon');
+  const hot = temp > S.th.temp;
+  const cfg = {
+    Aman: { cls: 'bg-white border-zinc-200 text-zinc-900', icon: 'bg-zinc-100 text-zinc-900', sym: '✓', t: 'Kualitas udara aman',
+      m: `Kadar gas ${Math.round(ppm)} PPM berada di bawah ${S.th.warn} PPM. Tidak perlu tindakan, pertahankan ventilasi normal.` },
+    Waspada: { cls: 'bg-zinc-200 border-zinc-400 text-zinc-900', icon: 'bg-zinc-900 text-white', sym: '!', t: 'Waspada: polutan mulai meningkat',
+      m: `Kadar gas ${Math.round(ppm)} PPM (${S.th.warn}–${S.th.danger} PPM). Buka ventilasi atau nyalakan Air Purifier, dan cari sumber polutan.` },
+    Bahaya: { cls: 'bg-zinc-950 border-zinc-950 text-white', icon: 'bg-white text-zinc-950 pulse', sym: '⚠', t: 'BAHAYA: kadar gas melewati ambang',
+      m: `Kadar gas ${Math.round(ppm)} PPM melebihi ${S.th.danger} PPM. Nyalakan Exhaust Fan, tinggalkan ruangan, dan matikan sumber emisi.` }
+  }[status];
+  b.className = 'rounded-lg border p-4 sm:p-5 flex items-start gap-4 ' + cfg.cls;
+  ic.className = 'w-10 h-10 rounded-full grid place-items-center text-lg font-bold flex-shrink-0 ' + cfg.icon;
+  ic.textContent = cfg.sym;
+  $('bannerTitle').textContent = cfg.t;
+  $('bannerMsg').textContent = cfg.m + (hot ? ` Suhu ${temp.toFixed(1)}°C melewati batas panas ${S.th.temp}°C.` : '');
+}
+
+/* =====================================================================
+   5) ★★★ SUMBER DATA ★★★
+   --- A. SIMULASI (aktif jika sakelar Simulasi = ON) ---
+   --- B. FIREBASE  (aktif jika Simulasi = OFF dan URL diisi)
+   Untuk hardware nyata: matikan simulasi, isi URL Firebase di tab
+   Pengaturan. Semua pembacaan akhirnya memanggil updateDashboardUI().
+   ===================================================================== */
+
+/* ---- A. SIMULASI ---- */
+function simulateReading() {
+  const l = S.last;
+  const temp = clamp(l.temp + (Math.random() - .5) * .8 + (28.5 - l.temp) * .05, 22, 45);
+  const hum = clamp(l.hum + (Math.random() - .5) * 2 + (60 - l.hum) * .05, 30, 90);
+  const base = 65 + Math.sin(Date.now() / 20000) * 25;
+  const ppm = clamp(base + (Math.random() - .5) * 14 + S.spike, 20, 650);
+  S.spike = S.spike > 3 ? S.spike * .8 : 0;
+  return { temp, hum, ppm };
+}
+function simTick() {
+  if (!S.sim) return;
+  const r = simulateReading();
+  updateDashboardUI(r.temp, r.hum, r.ppm);
+}
+
+/* ---- B. FIREBASE REALTIME DATABASE ----
+   Contoh struktur: { "sensor": { "temp": 28.5, "hum": 60, "ppm": 85 } }
+   Kode ESP32 mengirim dengan PUT/PATCH ke: <URL>/sensor.json            */
+async function fetchFromFirebase() {
+  if (S.sim || !S.firebaseUrl) return;
+  try {
+    const res = await fetch(S.firebaseUrl.replace(/\/$/, '') + '/sensor.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const d = await res.json();
+    if (!d) throw new Error('Data kosong');
+    setOnline(true);
+    updateDashboardUI(d.temp, d.hum, d.ppm);   // <-- titik integrasi hardware
+  } catch (e) { setOnline(false); }
+}
+function setOnline(on) {
+  $('statusText').textContent = on ? 'Online - ESP32 Node 01' : 'Offline - ESP32 Node 01';
+  $('statusDot').className = 'w-2 h-2 rounded-full ' + (on ? 'bg-zinc-900 pulse' : 'bg-zinc-400');
+}
+
+/* Timer tunggal tiap 2,5 detik: simulasi atau Firebase */
+setInterval(() => { S.sim ? simTick() : fetchFromFirebase(); }, 2500);
+
+/* ---------- 6) AKTUATOR ---------- */
+const ACT = { fan: ['swFan', 'stFan'], pur: ['swPur', 'stPur'], buz: ['swBuz', 'stBuz'] };
+function renderAct(k, note) {
+  const on = S.act[k];
+  setSwitch($(ACT[k][0]), on);
+  $(ACT[k][1]).textContent = (on ? 'ON' : 'OFF') + (note || '');
+}
+function applyAuto(ppm) {
+  if (!S.auto) return;
+  if (ppm > S.th.danger) {
+    if (!S.act.fan) { S.act.fan = true; S.autoFan = true; }
+    if (!S.act.buz) { S.act.buz = true; S.autoBuz = true; }
+    renderAct('fan', S.autoFan ? ' · otomatis' : ''); renderAct('buz', S.autoBuz ? ' · otomatis' : '');
+  } else {
+    if (S.autoFan) { S.act.fan = false; S.autoFan = false; renderAct('fan'); }
+    if (S.autoBuz) { S.act.buz = false; S.autoBuz = false; renderAct('buz'); }
+  }
+}
+['fan', 'pur', 'buz'].forEach(k => {
+  $(ACT[k][0]).addEventListener('click', () => {
+    S.act[k] = !S.act[k];
+    if (k === 'fan') S.autoFan = false; if (k === 'buz') S.autoBuz = false;
+    renderAct(k, ' · manual');
+  });
+});
+$('swAuto').addEventListener('click', () => {
+  S.auto = !S.auto; setSwitch($('swAuto'), S.auto);
+  $('autoNote').textContent = S.auto
+    ? 'Auto-trigger aktif: kipas & buzzer menyala otomatis jika PPM melewati ambang bahaya.'
+    : 'Auto-trigger nonaktif: aktuator hanya dikendalikan manual.';
+  if (S.auto) applyAuto(S.last.ppm);
+  else { S.autoFan = false; S.autoBuz = false; }
+});
+$('swSim').addEventListener('click', () => {
+  S.sim = !S.sim; setSwitch($('swSim'), S.sim);
+  $('simLabel').textContent = S.sim ? 'ON' : 'OFF';
+  if (S.sim) setOnline(true); else if (!S.firebaseUrl) setOnline(false);
+});
+$('btnSpike').addEventListener('click', () => {
+  S.spike = 280;
+  const r = simulateReading();
+  updateDashboardUI(r.temp, r.hum, r.ppm);   // langsung tampil, walau simulasi OFF
+});
+
+/* ---------- 7) ANALITIK ---------- */
+function renderStats() {
+  const s = S.st, f = (v, d = 1) => s.n ? v.toFixed(d) : '-';
+  $('sTmin').textContent = f(s.minT); $('sTavg').textContent = f(s.sumT / s.n); $('sTmax').textContent = f(s.maxT);
+  $('sHmin').textContent = f(s.minH); $('sHavg').textContent = f(s.sumH / s.n); $('sHmax').textContent = f(s.maxH);
+  $('sPmin').textContent = f(s.minP, 0); $('sPavg').textContent = f(s.sumP / s.n, 0); $('sPmax').textContent = f(s.maxP, 0);
+  $('sCount').textContent = `Statistik dihitung dari ${s.n} pembacaan pada sesi ini.`;
+}
+const BADGE = {
+  Aman: 'border border-zinc-300 text-zinc-700 bg-white',
+  Waspada: 'bg-zinc-300 text-zinc-900',
+  Bahaya: 'bg-zinc-950 text-white'
+};
+function renderLog() {
+  const f = $('logFilter').value;
+  const rows = S.log.filter(r => f === 'Semua' || r.status === f);
+  $('logBody').innerHTML = rows.length ? rows.map(r =>
+    `<tr class="hover:bg-zinc-50"><td class="px-5 py-2.5">${r.time}</td><td class="px-3 py-2.5">${r.temp.toFixed(1)} °C</td><td class="px-3 py-2.5">${r.hum.toFixed(1)} %</td><td class="px-3 py-2.5">${r.ppm}</td><td class="px-3 py-2.5">${r.aqi}</td><td class="px-3 py-2.5"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${BADGE[r.status]}">${r.status}</span></td></tr>`
+  ).join('') : `<tr><td colspan="6" class="px-5 py-8 text-center text-zinc-500">Belum ada data untuk filter ini. Nyalakan Simulasi atau tunggu data masuk.</td></tr>`;
+}
+$('logFilter').addEventListener('change', renderLog);
+$('btnReset').addEventListener('click', () => {
+  S.log = [];
+  S.st = { n: 0, sumT: 0, sumH: 0, sumP: 0, minT: Infinity, maxT: -Infinity, minH: Infinity, maxH: -Infinity, minP: Infinity, maxP: -Infinity };
+  renderStats(); renderLog();
+});
+$('btnCsv').addEventListener('click', () => {
+  if (!S.log.length) { alert('Log kosong. Belum ada data untuk diunduh.'); return; }
+  const lines = ['Waktu (WIB),Suhu (C),Kelembapan (%),PPM,AQI,Status'];
+  S.log.slice().reverse().forEach(r => lines.push([r.time, r.temp, r.hum, r.ppm, r.aqi, r.status].join(',')));
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'log-kualitas-udara.csv';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+});
+
+/* ---------- 8) PENGATURAN ---------- */
+$('btnSaveTh').addEventListener('click', () => {
+  const w = parseFloat($('thWarn').value), d = parseFloat($('thDanger').value), t = parseFloat($('thTemp').value);
+  const msg = $('thMsg');
+  if ([w, d, t].some(isNaN)) { msg.textContent = 'Semua kolom harus diisi dengan angka.'; return; }
+  if (w >= d) { msg.textContent = 'Batas waspada harus lebih kecil dari batas bahaya.'; return; }
+  S.th = { warn: w, danger: d, temp: t };
+  msg.textContent = `Tersimpan: waspada ≥ ${w} PPM, bahaya > ${d} PPM, suhu panas > ${t}°C.`;
+  const l = S.last; renderBanner(getStatus(l.ppm), l.ppm, l.temp); applyAuto(l.ppm);
+});
+$('btnDefTh').addEventListener('click', () => {
+  $('thWarn').value = DEFAULTS.warn; $('thDanger').value = DEFAULTS.danger; $('thTemp').value = DEFAULTS.temp;
+  $('btnSaveTh').click();
+});
+$('btnSaveFb').addEventListener('click', async () => {
+  const url = $('fbUrl').value.trim(), m = $('fbMsg');
+  if (!/^https:\/\/.+/.test(url)) { m.textContent = 'URL tidak valid. Gunakan format https://…firebaseio.com'; return; }
+  S.firebaseUrl = url; m.textContent = 'Menguji koneksi…';
+  try {
+    const res = await fetch(url.replace(/\/$/, '') + '/sensor.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    m.textContent = 'Terhubung. Matikan Simulasi untuk memakai data Firebase.';
+  } catch (e) { m.textContent = 'Gagal terhubung: periksa URL dan aturan baca (rules) database.'; }
+});
+
+/* ---------- 9) NAVIGASI & INIT ---------- */
+const TITLES = { dashboard: 'Monitoring & Kontrol Kualitas Udara', analytics: 'Analitik & Statistik Data', settings: 'Pengaturan & Kalibrasi Sistem' };
+function showView(v) {
+  ['dashboard', 'analytics', 'settings'].forEach(n => $('view-' + n).classList.toggle('hidden', n !== v));
+  document.querySelectorAll('.nav-btn').forEach(b => b.dataset.active = b.dataset.view === v ? '1' : '0');
+  $('pageTitle').textContent = TITLES[v];
+  closeMenu();
+  if (v === 'dashboard') { chTH.resize(); chPPM.resize(); }
+  window.scrollTo({ top: 0 });
+}
+document.querySelectorAll('.nav-btn').forEach(b => b.addEventListener('click', () => showView(b.dataset.view)));
+function openMenu() { $('sidebar').classList.remove('-translate-x-full'); $('overlay').classList.remove('hidden'); }
+function closeMenu() { $('sidebar').classList.add('-translate-x-full'); $('overlay').classList.add('hidden'); }
+$('menuBtn').addEventListener('click', openMenu);
+$('overlay').addEventListener('click', closeMenu);
+
+initCharts();
+tickClock(); setInterval(tickClock, 1000);
+renderAct('fan'); renderAct('pur'); renderAct('buz');
+renderStats(); renderLog();
+// Isi awal 6 titik riwayat agar grafik tidak kosong saat pertama dibuka
+for (let i = 0; i < 6; i++) { const r = simulateReading(); S.last = r; updateDashboardUI(r.temp, r.hum, r.ppm); }
+</script>
+</body>
+</html>
+
 <html lang="id">
 <head>
   <meta charset="utf-8">
