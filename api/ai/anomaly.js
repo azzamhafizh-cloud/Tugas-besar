@@ -8,6 +8,35 @@ function median(values) {
     : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+function formatWIB(timestamp) {
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) {
+    return "Waktu tidak valid";
+  }
+
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(date);
+
+  const values = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      values[part.type] = part.value;
+    }
+  }
+
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second} WIB`;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
@@ -155,14 +184,28 @@ export default async function handler(req, res) {
         ? "ANOMALY"
         : "NORMAL";
 
-    // 5. Meminta Gemini menjelaskan hasil deteksi
+    // 5. Mengubah waktu data menjadi WIB
+    const latestWib = {
+      ...latest,
+      created_at: formatWIB(latest.created_at)
+    };
+
+    const aiData = data.map(item => ({
+      ...item,
+      created_at: formatWIB(item.created_at)
+    }));
+
+    // 6. Meminta Gemini menjelaskan hasil deteksi
     const prompt = `
 Kamu adalah AI Anomaly Detection AirWatch.
 
 Jelaskan hasil pemeriksaan sensor berikut dalam bahasa Indonesia.
 
 Data terbaru:
-${JSON.stringify(latest)}
+${JSON.stringify(latestWib, null, 2)}
+
+Riwayat data sensor:
+${JSON.stringify(aiData, null, 2)}
 
 Jumlah data pembanding:
 ${validData.length}
@@ -171,17 +214,35 @@ Status deteksi statistik:
 ${status}
 
 Anomali yang ditemukan:
-${JSON.stringify(anomalies)}
+${JSON.stringify(anomalies, null, 2)}
+
+ATURAN WAKTU:
+- Semua waktu sudah menggunakan WIB (Asia/Jakarta).
+- Selalu gunakan WIB ketika menyebutkan waktu.
+- Jangan menyebut UTC.
+- Jangan mengubah atau mengonversi ulang timestamp.
+- Gunakan waktu yang tersedia pada data.
 
 Jelaskan:
 1. Kondisi sensor.
 2. Apakah ada anomali.
-3. Penyebab berdasarkan data yang tersedia.
+3. Perubahan yang terlihat berdasarkan data.
 4. Rekomendasi pemeriksaan.
 
-Jangan mengubah hasil deteksi statistik.
-Jangan mengarang data.
-Jika data tidak cukup, jelaskan keterbatasannya.
+GAYA BAHASA:
+- Gunakan bahasa Indonesia yang santai, natural, dan mudah dipahami.
+- Jangan terlalu formal atau seperti laporan ilmiah.
+- Jelaskan seperti sedang berbicara langsung dengan pengguna.
+- Hindari kalimat terlalu panjang.
+- Jangan gunakan Markdown seperti tanda pagar (#) atau tanda bintang (*).
+- Gunakan penomoran biasa jika diperlukan.
+
+ATURAN ANALISIS:
+- Jangan mengubah hasil deteksi statistik.
+- Jangan mengarang data.
+- Jangan menyimpulkan sensor rusak hanya karena ada jeda data.
+- Jangan menyebut anomali sebagai kerusakan perangkat tanpa bukti.
+- Jika data tidak cukup, jelaskan keterbatasannya.
 `;
 
     const aiResponse = await fetch(
@@ -231,9 +292,11 @@ Jika data tidak cukup, jelaskan keterbatasannya.
       status,
       totalData: data.length,
       latestData: latest,
+      latestDataWib: latestWib,
       anomalies,
       explanation: explanation || "Penjelasan AI tidak tersedia.",
-      generatedAt: new Date().toISOString()
+      generatedAt: new Date().toISOString(),
+      generatedAtWib: formatWIB(new Date().toISOString())
     });
 
   } catch (error) {
