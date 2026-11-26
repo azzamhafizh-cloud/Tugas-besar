@@ -1,57 +1,45 @@
 
-function linearRegression(values) {
-  const n = values.length;
+function calculateRegression(points, horizonMinutes) {
+  const n = points.length;
 
-  const meanX = (n - 1) / 2;
-  const meanY = values.reduce((a, b) => a + b, 0) / n;
+  const meanX = points.reduce((sum, p) => sum + p.x, 0) / n;
+  const meanY = points.reduce((sum, p) => sum + p.y, 0) / n;
 
   let numerator = 0;
   let denominator = 0;
 
-  values.forEach((value, index) => {
-    numerator += (index - meanX) * (value - meanY);
-    denominator += (index - meanX) ** 2;
-  });
+  for (const point of points) {
+    numerator += (point.x - meanX) * (point.y - meanY);
+    denominator += (point.x - meanX) ** 2;
+  }
 
-  const slope = denominator
-    ? numerator / denominator
-    : 0;
+  const slope = denominator === 0 ? 0 : numerator / denominator;
+  const intercept = meanY - slope * meanX;
 
-  return {
-    slope,
-    intercept: meanY - slope * meanX
-  };
-}
+  const lastX = points[points.length - 1].x;
+  const current = points[points.length - 1].y;
+  const predicted = intercept + slope * (lastX + horizonMinutes);
 
-function calculatePrediction(values, minutesPerReading, horizon) {
-  const regression = linearRegression(values);
-  const futureSteps = horizon / minutesPerReading;
-  const predicted = regression.intercept +
-    regression.slope * (values.length - 1 + futureSteps);
-
-  const mean = values.reduce((a, b) => a + b, 0) / values.length;
-
-  const residuals = values.map((value, index) => {
-    const fitted = regression.intercept +
-      regression.slope * index;
-    return (value - fitted) ** 2;
+  const squaredErrors = points.map(point => {
+    const fitted = intercept + slope * point.x;
+    return (point.y - fitted) ** 2;
   });
 
   const rmse = Math.sqrt(
-    residuals.reduce((a, b) => a + b, 0) / values.length
+    squaredErrors.reduce((sum, value) => sum + value, 0) / n
   );
 
   return {
-    current: values[values.length - 1],
+    current,
     predicted: Number(predicted.toFixed(2)),
-    change: Number((predicted - values[values.length - 1]).toFixed(2)),
-    trend: regression.slope > 0.01
+    change: Number((predicted - current).toFixed(2)),
+    trend: slope > 0.01
       ? "INCREASING"
-      : regression.slope < -0.01
+      : slope < -0.01
         ? "DECREASING"
         : "STABLE",
-    rmse: Number(rmse.toFixed(2)),
-    baseline: Number(mean.toFixed(2))
+    slopePerMinute: Number(slope.toFixed(4)),
+    rmse: Number(rmse.toFixed(3))
   };
 }
 
@@ -77,9 +65,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Mengambil 20 data sensor terbaru
+    // 1. Ambil hingga 500 data sensor terbaru
     const dbResponse = await fetch(
-      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,created_at&order=created_at.desc&limit=20`,
+      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,created_at&order=created_at.desc&limit=500`,
       {
         headers: {
           apikey: supabaseKey,
@@ -94,107 +82,112 @@ export default async function handler(req, res) {
 
     const data = await dbResponse.json();
 
-    // 2. Validasi data
+    // 2. Validasi data sensor dan timestamp
     const validData = data
       .filter(item =>
         Number.isFinite(Number(item.temperature)) &&
         Number.isFinite(Number(item.humidity)) &&
-        item.created_at
+        item.created_at &&
+        Number.isFinite(new Date(item.created_at).getTime())
       )
       .reverse();
 
     if (validData.length < 10) {
-      return res.status(422).json({
-        success: false,
-        message: "Diperlukan minimal 10 data sensor valid untuk prediksi."
+      return res.status(200).json({
+        success: true,
+        feature: "AI Prediction",
+        status: "INSUFFICIENT_DATA",
+        totalData: validData.length,
+        requiredData: 10,
+        message: "Minimal 10 data sensor valid diperlukan.",
+        predictions: null,
+        generatedAt: new Date().toISOString()
       });
     }
 
-    // 3. Menghitung interval pembacaan aktual
-    const timestamps = validData.map(item =>
-      new Date(item.created_at).getTime()
-    );
+    // 3. Hitung durasi riwayat berdasarkan timestamp aktual
+    const firstTime = new Date(validData[0].created_at).getTime();
+    const lastTime = new Date(
+      validData[validData.length - 1].created_at
+    ).getTime();
 
-    const intervals = [];
+    const historyDurationMinutes = (lastTime - firstTime) / 60000;
 
-    for (let i = 1; i < timestamps.length; i++) {
-      const difference = (timestamps[i] - timestamps[i - 1]) / 60000;
+    const sufficientHistory = historyDurationMinutes >= 60;
 
-      if (difference > 0) {
-        intervals.push(difference);
-      }
-    }
-
-    if (intervals.length < 5) {
-      return res.status(422).json({
-        success: false,
-        message: "Interval data sensor tidak cukup untuk prediksi."
+    // 4. Jika riwayat kurang dari 60 menit, jangan membuat prediksi
+    if (!sufficientHistory) {
+      return res.status(200).json({
+        success: true,
+        feature: "AI Prediction",
+        model: "gemini-3.1-flash-lite",
+        status: "INSUFFICIENT_DATA",
+        predictionHorizon: "30 minutes",
+        totalData: validData.length,
+        historyDurationMinutes: Number(
+          historyDurationMinutes.toFixed(2)
+        ),
+        requiredHistoryMinutes: 60,
+        sufficientHistory: false,
+        predictions: null,
+        latestData: validData[validData.length - 1],
+        explanation:
+          "Riwayat sensor belum mencapai 60 menit. " +
+          "Sistem menunggu data tambahan agar prediksi lebih layak dihitung.",
+        generatedAt: new Date().toISOString()
       });
     }
 
-    const minutesPerReading =
-      intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    // 5. Buat titik regresi berdasarkan waktu aktual dalam menit
+    const temperaturePoints = validData.map(item => ({
+      x: (new Date(item.created_at).getTime() - firstTime) / 60000,
+      y: Number(item.temperature)
+    }));
 
-    // 4. Menyiapkan nilai suhu dan kelembapan
-    const temperatures = validData.map(item =>
-      Number(item.temperature)
-    );
+    const humidityPoints = validData.map(item => ({
+      x: (new Date(item.created_at).getTime() - firstTime) / 60000,
+      y: Number(item.humidity)
+    }));
 
-    const humidities = validData.map(item =>
-      Number(item.humidity)
-    );
-
-    // 5. Prediksi 30 menit ke depan
-    const temperaturePrediction = calculatePrediction(
-      temperatures,
-      minutesPerReading,
+    // 6. Hitung prediksi 30 menit ke depan
+    const temperaturePrediction = calculateRegression(
+      temperaturePoints,
       30
     );
 
-    const humidityPrediction = calculatePrediction(
-      humidities,
-      minutesPerReading,
+    const humidityPrediction = calculateRegression(
+      humidityPoints,
       30
     );
 
-    // 6. Evaluasi kualitas model
-    const sufficientHistory =
-      (timestamps[timestamps.length - 1] -
-        timestamps[0]) >= 60 * 60 * 1000;
-
+    // 7. Minta Gemini menjelaskan hasil perhitungan
     const prompt = `
 Kamu adalah AI Prediction AirWatch.
 
-Jelaskan hasil prediksi suhu dan kelembapan berdasarkan
-perhitungan regresi linear berikut.
+Jelaskan hasil prediksi berdasarkan regresi linear
+yang sudah dihitung oleh sistem.
 
-Prediksi:
+Data prediksi:
 ${JSON.stringify({
   temperature: temperaturePrediction,
   humidity: humidityPrediction
 }, null, 2)}
 
-Durasi riwayat:
-${Math.round(
-  (timestamps[timestamps.length - 1] -
-    timestamps[0]) / 60000
-)} menit.
-
+Durasi riwayat: ${historyDurationMinutes.toFixed(2)} menit.
+Jumlah data: ${validData.length}.
 Target prediksi: 30 menit ke depan.
 
-Jelaskan:
+Berikan penjelasan dalam bahasa Indonesia:
 1. Perkiraan suhu dan kelembapan.
 2. Tren perubahan.
 3. Risiko dan rekomendasi.
 4. Keterbatasan prediksi.
 
 Jangan mengubah angka hasil perhitungan.
+Jangan menyebut RMSE sebagai jaminan akurasi masa depan.
 Jangan menganggap prediksi sebagai kepastian.
-Jika riwayat terlalu singkat, jelaskan bahwa
-hasil prediksi masih bersifat awal.
 `;
 
-    // 7. Meminta Gemini menjelaskan prediksi
     const aiResponse = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent",
       {
@@ -235,19 +228,19 @@ hasil prediksi masih bersifat awal.
       .join("")
       .trim();
 
-    // 8. Mengirim hasil ke dashboard
+    // 8. Kirim hasil prediksi
     return res.status(200).json({
       success: true,
       feature: "AI Prediction",
       model: "gemini-3.1-flash-lite",
+      status: "PREDICTION_AVAILABLE",
       predictionHorizon: "30 minutes",
       totalData: validData.length,
-      historyDurationMinutes: Math.round(
-        (timestamps[timestamps.length - 1] -
-          timestamps[0]) / 60000
+      historyDurationMinutes: Number(
+        historyDurationMinutes.toFixed(2)
       ),
-      sufficientHistory,
-      intervalMinutes: Number(minutesPerReading.toFixed(2)),
+      requiredHistoryMinutes: 60,
+      sufficientHistory: true,
       predictions: {
         temperature: temperaturePrediction,
         humidity: humidityPrediction
@@ -262,7 +255,8 @@ hasil prediksi masih bersifat awal.
 
     return res.status(500).json({
       success: false,
-      message: error.message || "Terjadi kesalahan pada sistem prediksi."
+      message: error.message ||
+        "Terjadi kesalahan pada sistem prediksi."
     });
   }
 }
