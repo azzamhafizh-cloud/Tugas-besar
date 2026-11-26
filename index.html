@@ -45,6 +45,9 @@
     <button class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-left hover:bg-zinc-800 hover:text-white transition-colors" data-view="analytics" data-active="0">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>Analitik &amp; Statistik
     </button>
+    <button class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-left hover:bg-zinc-800 hover:text-white transition-colors" data-view="ai" data-active="0">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.64 5.64l1.42 1.42m9.88 9.88 1.42 1.42m0-12.72-1.42 1.42m-9.88 9.88-1.42 1.42"/><circle cx="12" cy="12" r="5"/></svg>AI AirWatch
+    </button>
     <button class="nav-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm text-left hover:bg-zinc-800 hover:text-white transition-colors" data-view="settings" data-active="0">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Pengaturan &amp; Kalibrasi
     </button>
@@ -209,6 +212,74 @@
         <p class="text-xs text-zinc-500 mt-2">Endpoint: <code>/api/telemetry?limit=20</code></p>
         <p class="text-xs text-zinc-500 mt-1">Pembaruan otomatis setiap 5 detik.</p>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ VIEW 4: AI AIRWATCH ============ -->
+  <section id="view-ai" class="space-y-6 hidden">
+    <div class="bg-zinc-950 text-white rounded-lg p-5 sm:p-6">
+      <p class="text-xs uppercase tracking-wider text-zinc-400">AirWatch Intelligence</p>
+      <h2 class="text-xl sm:text-2xl font-semibold mt-1">AI Monitoring Center</h2>
+      <p class="text-sm text-zinc-300 mt-2 max-w-3xl">Analisis, deteksi anomali, prediksi, dan tanya jawab berdasarkan data sensor DHT22 yang tersimpan di Supabase.</p>
+      <p class="text-xs text-zinc-400 mt-3">Versi uji coba saat ini hanya menggunakan sensor DHT22. Sensor PMS dan MQ belum diaktifkan.</p>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="font-semibold">AI Monitoring</h3>
+          <span class="text-xs rounded-full bg-zinc-100 px-2 py-1 text-zinc-600">Analisis</span>
+        </div>
+        <p class="text-sm text-zinc-500 mt-2">Menganalisis kondisi suhu dan kelembapan dari data terbaru.</p>
+        <button id="btnAiAnalyze" class="mt-4 w-full bg-zinc-950 text-white text-sm px-3 py-2 rounded-md hover:bg-zinc-800">Jalankan Monitoring</button>
+        <div id="aiAnalyzeStatus" class="text-xs text-zinc-500 mt-3" aria-live="polite">Belum dijalankan.</div>
+        <div id="aiAnalyzeResult" class="mt-3 text-sm text-zinc-700 whitespace-pre-wrap break-words"></div>
+      </div>
+
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="font-semibold">AI Anomaly Detection</h3>
+          <span id="aiAnomalyBadge" class="text-xs rounded-full bg-zinc-100 px-2 py-1 text-zinc-600">Belum diperiksa</span>
+        </div>
+        <p class="text-sm text-zinc-500 mt-2">Memeriksa penyimpangan suhu dan kelembapan berdasarkan riwayat sensor.</p>
+        <button id="btnAiAnomaly" class="mt-4 w-full bg-zinc-950 text-white text-sm px-3 py-2 rounded-md hover:bg-zinc-800">Periksa Anomali</button>
+        <div id="aiAnomalyStatus" class="text-xs text-zinc-500 mt-3" aria-live="polite">Belum dijalankan.</div>
+        <div id="aiAnomalyResult" class="mt-3 text-sm text-zinc-700 whitespace-pre-wrap break-words"></div>
+      </div>
+
+      <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="font-semibold">AI Prediction</h3>
+          <span class="text-xs rounded-full bg-zinc-100 px-2 py-1 text-zinc-600">30 menit</span>
+        </div>
+        <p class="text-sm text-zinc-500 mt-2">Memproyeksikan suhu dan kelembapan jika riwayat data mencukupi.</p>
+        <button id="btnAiPredict" class="mt-4 w-full bg-zinc-950 text-white text-sm px-3 py-2 rounded-md hover:bg-zinc-800">Jalankan Prediksi</button>
+        <div id="aiPredictStatus" class="text-xs text-zinc-500 mt-3" aria-live="polite">Belum dijalankan.</div>
+        <div id="aiPredictResult" class="mt-3 text-sm text-zinc-700 whitespace-pre-wrap break-words"></div>
+      </div>
+    </div>
+
+    <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
+      <div class="flex items-center gap-2">
+        <h3 class="font-semibold">AI Assistant</h3>
+        <span class="text-xs rounded-full bg-zinc-100 px-2 py-1 text-zinc-600">Tanya AirWatch</span>
+      </div>
+      <p class="text-sm text-zinc-500 mt-2">Ajukan pertanyaan tentang kondisi suhu, kelembapan, dan riwayat data DHT22.</p>
+      <form id="aiAssistantForm" class="mt-4 space-y-3">
+        <label for="aiQuestion" class="block text-sm font-medium text-zinc-700">Pertanyaan</label>
+        <textarea id="aiQuestion" rows="3" maxlength="1000" required placeholder="Contoh: Bagaimana kondisi suhu dan kelembapan AirWatch sekarang?" class="w-full border border-zinc-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-400"></textarea>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs text-zinc-400">Maksimal 1000 karakter.</p>
+          <button id="btnAiAsk" type="submit" class="bg-zinc-950 text-white text-sm px-4 py-2 rounded-md hover:bg-zinc-800">Kirim Pertanyaan</button>
+        </div>
+      </form>
+      <div id="aiAssistantStatus" class="text-xs text-zinc-500 mt-3" aria-live="polite">Belum ada percakapan.</div>
+      <div id="aiAssistantAnswer" class="mt-3 text-sm text-zinc-700 whitespace-pre-wrap break-words"></div>
+    </div>
+
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <p class="text-sm font-medium text-amber-900">Catatan pengujian</p>
+      <p class="text-sm text-amber-800 mt-1">Hasil AI merupakan analisis pendukung, bukan pengukuran langsung atau kepastian kondisi lingkungan. Prediksi hanya tersedia jika riwayat sensor memenuhi persyaratan endpoint.</p>
     </div>
   </section>
 
@@ -438,10 +509,137 @@ $('btnCsv').addEventListener('click', () => {
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
 });
 
+/* ---------- 8) AI AIRWATCH: INTEGRASI ENDPOINT ---------- */
+async function callAIEndpoint(path, body = {}) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store'
+  });
+
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error('Respons server bukan JSON yang valid.');
+  }
+
+  if (!response.ok || result.success === false) {
+    throw new Error(result.message || `Permintaan gagal (HTTP ${response.status}).`);
+  }
+  return result;
+}
+
+function setAIButtonLoading(button, loading, normalText) {
+  button.disabled = loading;
+  button.textContent = loading ? 'Memproses...' : normalText;
+  button.classList.toggle('opacity-60', loading);
+  button.classList.toggle('cursor-not-allowed', loading);
+}
+
+function showAIError(statusId, resultId, error) {
+  $(statusId).textContent = 'Gagal: ' + error.message;
+  $(resultId).textContent = '';
+}
+
+$('btnAiAnalyze').addEventListener('click', async () => {
+  const button = $('btnAiAnalyze');
+  setAIButtonLoading(button, true, 'Jalankan Monitoring');
+  $('aiAnalyzeStatus').textContent = 'Mengambil data dan meminta analisis AI...';
+  $('aiAnalyzeResult').textContent = '';
+  try {
+    const result = await callAIEndpoint('/api/ai/analyze', {});
+    $('aiAnalyzeStatus').textContent = `Berhasil · ${result.totalData ?? '-'} data sensor`;
+    $('aiAnalyzeResult').textContent =
+      result.analysis || result.message || 'Analisis berhasil, tetapi teks analisis tidak tersedia.';
+  } catch (error) {
+    showAIError('aiAnalyzeStatus', 'aiAnalyzeResult', error);
+  } finally {
+    setAIButtonLoading(button, false, 'Jalankan Monitoring');
+  }
+});
+
+$('btnAiAnomaly').addEventListener('click', async () => {
+  const button = $('btnAiAnomaly');
+  setAIButtonLoading(button, true, 'Periksa Anomali');
+  $('aiAnomalyStatus').textContent = 'Memeriksa pola data sensor...';
+  $('aiAnomalyResult').textContent = '';
+  try {
+    const result = await callAIEndpoint('/api/ai/anomaly', {});
+    const status = result.status || 'STATUS TIDAK DIKETAHUI';
+    const badge = $('aiAnomalyBadge');
+    badge.textContent = status;
+    badge.className = 'text-xs rounded-full px-2 py-1 ' +
+      (status === 'NORMAL' ? 'bg-green-100 text-green-800' :
+       status === 'ANOMALY' ? 'bg-red-100 text-red-800' :
+       'bg-amber-100 text-amber-800');
+    $('aiAnomalyStatus').textContent = `Pemeriksaan selesai · ${result.totalData ?? '-'} data sensor`;
+    $('aiAnomalyResult').textContent =
+      result.explanation || result.message || 'Pemeriksaan selesai.';
+  } catch (error) {
+    showAIError('aiAnomalyStatus', 'aiAnomalyResult', error);
+  } finally {
+    setAIButtonLoading(button, false, 'Periksa Anomali');
+  }
+});
+
+$('btnAiPredict').addEventListener('click', async () => {
+  const button = $('btnAiPredict');
+  setAIButtonLoading(button, true, 'Jalankan Prediksi');
+  $('aiPredictStatus').textContent = 'Memeriksa riwayat dan menghitung prediksi...';
+  $('aiPredictResult').textContent = '';
+  try {
+    const result = await callAIEndpoint('/api/ai/predict', {});
+    const status = result.status || (result.sufficientHistory ? 'PREDICTION_AVAILABLE' : 'INSUFFICIENT_DATA');
+    $('aiPredictStatus').textContent =
+      `${status} · ${result.totalData ?? '-'} data · riwayat ${result.historyDurationMinutes ?? 0} menit`;
+
+    if (result.predictions) {
+      const t = result.predictions.temperature;
+      const h = result.predictions.humidity;
+      $('aiPredictResult').textContent =
+        `Prediksi 30 menit ke depan\\n` +
+        `Suhu: ${t.current}°C → ${t.predicted}°C (${t.change > 0 ? '+' : ''}${t.change}°C)\\n` +
+        `Kelembapan: ${h.current}% → ${h.predicted}% (${h.change > 0 ? '+' : ''}${h.change}%)\\n\\n` +
+        (result.explanation || '');
+    } else {
+      $('aiPredictResult').textContent =
+        result.explanation || result.message ||
+        'Riwayat sensor belum mencukupi untuk membuat prediksi.';
+    }
+  } catch (error) {
+    showAIError('aiPredictStatus', 'aiPredictResult', error);
+  } finally {
+    setAIButtonLoading(button, false, 'Jalankan Prediksi');
+  }
+});
+
+$('aiAssistantForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = $('btnAiAsk');
+  const question = $('aiQuestion').value.trim();
+  if (!question) return;
+
+  setAIButtonLoading(button, true, 'Kirim Pertanyaan');
+  $('aiAssistantStatus').textContent = 'AI sedang membaca data sensor...';
+  $('aiAssistantAnswer').textContent = '';
+  try {
+    const result = await callAIEndpoint('/api/ai/assistant', { question });
+    $('aiAssistantStatus').textContent = `Jawaban tersedia · ${result.model || 'AI Assistant'}`;
+    $('aiAssistantAnswer').textContent =
+      result.answer || 'AI tidak memberikan jawaban.';
+  } catch (error) {
+    showAIError('aiAssistantStatus', 'aiAssistantAnswer', error);
+  } finally {
+    setAIButtonLoading(button, false, 'Kirim Pertanyaan');
+  }
+});
+
 /* ---------- 9) NAVIGASI & INIT ---------- */
-const TITLES = { dashboard: 'Monitoring & Kontrol Kualitas Udara', analytics: 'Analitik & Statistik Data', settings: 'Sumber Data Perangkat' };
+const TITLES = { dashboard: 'Monitoring & Kontrol Kualitas Udara', analytics: 'Analitik & Statistik Data', settings: 'Sumber Data Perangkat', ai: 'AI AirWatch' };
 function showView(v) {
-  ['dashboard', 'analytics', 'settings'].forEach(n => $('view-' + n).classList.toggle('hidden', n !== v));
+  ['dashboard', 'analytics', 'settings', 'ai'].forEach(n => $('view-' + n).classList.toggle('hidden', n !== v));
   document.querySelectorAll('.nav-btn').forEach(b => b.dataset.active = b.dataset.view === v ? '1' : '0');
   $('pageTitle').textContent = TITLES[v];
   closeMenu();
