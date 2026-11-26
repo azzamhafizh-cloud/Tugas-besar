@@ -37,6 +37,16 @@ function formatWIB(timestamp) {
   return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second} WIB`;
 }
 
+// Null, undefined, dan string kosong tidak boleh dianggap angka 0.
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
 
@@ -61,7 +71,7 @@ export default async function handler(req, res) {
   try {
     // 1. Mengambil 20 data sensor terbaru
     const dbResponse = await fetch(
-      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,created_at&order=created_at.desc&limit=20`,
+      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,pm1,pm25,pm10,gas_raw,created_at&order=created_at.desc&limit=20`,
       {
         headers: {
           apikey: supabaseKey,
@@ -71,6 +81,8 @@ export default async function handler(req, res) {
     );
 
     if (!dbResponse.ok) {
+      const errorText = await dbResponse.text();
+      console.error("Supabase error:", errorText);
       throw new Error("Gagal mengambil data Supabase.");
     }
 
@@ -86,105 +98,155 @@ export default async function handler(req, res) {
     const latest = data[0];
     const previous = data.slice(1);
 
-    const temperature = Number(latest.temperature);
-    const humidity = Number(latest.humidity);
+    // 2. Konfigurasi parameter dan ambang perubahan.
+    // Nilai ini merupakan ambang deteksi perubahan,
+    // bukan batas aman atau standar kualitas udara.
+    const sensorConfig = {
+      temperature: {
+        label: "Suhu",
+        unit: "°C",
+        madFloor: 2,
+        suddenChange: 2.5
+      },
+      humidity: {
+        label: "Kelembapan",
+        unit: "%",
+        madFloor: 8,
+        suddenChange: 10
+      },
+      pm1: {
+        label: "PM1.0",
+        unit: "µg/m³",
+        madFloor: 10,
+        suddenChange: 15
+      },
+      pm25: {
+        label: "PM2.5",
+        unit: "µg/m³",
+        madFloor: 10,
+        suddenChange: 15
+      },
+      pm10: {
+        label: "PM10",
+        unit: "µg/m³",
+        madFloor: 20,
+        suddenChange: 25
+      },
+      gas_raw: {
+        label: "MQ135 ADC",
+        unit: "ADC",
+        madFloor: 100,
+        suddenChange: 300
+      }
+    };
 
-    if (!Number.isFinite(temperature) ||
-        !Number.isFinite(humidity)) {
-      return res.status(422).json({
-        success: false,
-        message: "Data sensor terbaru tidak valid."
-      });
-    }
-
-    // 2. Menyiapkan riwayat valid
-    const validData = previous.filter(item =>
-      Number.isFinite(Number(item.temperature)) &&
-      Number.isFinite(Number(item.humidity))
-    );
-
-    const tempValues = validData.map(
-      item => Number(item.temperature)
-    );
-
-    const humValues = validData.map(
-      item => Number(item.humidity)
-    );
-
-    const enoughData = validData.length >= 5;
     const anomalies = [];
+    const sensorAnalysis = {};
 
-    // 3. Deteksi berdasarkan median dan MAD
-    if (enoughData) {
-      const tempMedian = median(tempValues);
-      const humMedian = median(humValues);
+    // 3. Memeriksa setiap parameter secara terpisah
+    for (const [key, config] of Object.entries(sensorConfig)) {
+      const currentValue = toNumber(latest[key]);
 
-      const tempMAD = median(
-        tempValues.map(v => Math.abs(v - tempMedian))
-      );
+      // Ambil riwayat valid khusus parameter ini
+      const history = previous
+        .map(item => toNumber(item[key]))
+        .filter(value => value !== null);
 
-      const humMAD = median(
-        humValues.map(v => Math.abs(v - humMedian))
-      );
+      const enoughData = history.length >= 5;
 
-      const tempThreshold = Math.max(3 * 1.4826 * tempMAD, 2);
-      const humThreshold = Math.max(3 * 1.4826 * humMAD, 8);
+      sensorAnalysis[key] = {
+        label: config.label,
+        unit: config.unit,
+        current: currentValue,
+        historyCount: history.length,
+        enoughData,
+        baseline: null,
+        status: currentValue === null
+          ? "NO_DATA"
+          : enoughData
+            ? "NORMAL"
+            : "INSUFFICIENT_DATA"
+      };
 
-      if (Math.abs(temperature - tempMedian) > tempThreshold) {
-        anomalies.push({
-          sensor: "temperature",
-          current: temperature,
-          baseline: tempMedian,
-          message: "Suhu menyimpang dari pola riwayat."
-        });
+      // Tidak melakukan deteksi jika nilai terbaru tidak tersedia
+      if (currentValue === null) {
+        continue;
       }
 
-      if (Math.abs(humidity - humMedian) > humThreshold) {
-        anomalies.push({
-          sensor: "humidity",
-          current: humidity,
-          baseline: humMedian,
-          message: "Kelembapan menyimpang dari pola riwayat."
-        });
+      // 4. Deteksi berdasarkan Median dan MAD
+      if (enoughData) {
+        const baseline = median(history);
+
+        const mad = median(
+          history.map(value => Math.abs(value - baseline))
+        );
+
+        const threshold = Math.max(
+          3 * 1.4826 * mad,
+          config.madFloor
+        );
+
+        const deviation = Math.abs(currentValue - baseline);
+
+        sensorAnalysis[key].baseline = baseline;
+        sensorAnalysis[key].threshold = threshold;
+
+        if (deviation > threshold) {
+          anomalies.push({
+            sensor: key,
+            label: config.label,
+            current: currentValue,
+            baseline,
+            deviation,
+            unit: config.unit,
+            type: "STATISTICAL_DEVIATION",
+            message: `${config.label} menyimpang dari pola riwayat.`
+          });
+
+          sensorAnalysis[key].status = "ANOMALY";
+        }
+      }
+
+      // 5. Deteksi perubahan mendadak dari data sebelumnya
+      if (history.length > 0) {
+        const previousValue = history[0];
+
+        const change = Math.abs(
+          currentValue - previousValue
+        );
+
+        if (change >= config.suddenChange) {
+          anomalies.push({
+            sensor: key,
+            label: config.label,
+            current: currentValue,
+            previous: previousValue,
+            change,
+            unit: config.unit,
+            type: "SUDDEN_CHANGE",
+            message: `Terjadi perubahan mendadak pada ${config.label}.`
+          });
+
+          sensorAnalysis[key].status = "ANOMALY";
+        }
       }
     }
 
-    // 4. Deteksi lonjakan dari pembacaan sebelumnya
-    if (validData.length > 0) {
-      const lastPrevious = validData[0];
+    // 6. Menentukan status keseluruhan
+    const analyzedSensors = Object.values(sensorAnalysis)
+      .filter(sensor => sensor.current !== null);
 
-      const tempChange = Math.abs(
-        temperature - Number(lastPrevious.temperature)
-      );
+    const enoughSensorData = analyzedSensors.some(
+      sensor => sensor.enoughData
+    );
 
-      const humChange = Math.abs(
-        humidity - Number(lastPrevious.humidity)
-      );
-
-      if (tempChange >= 2.5) {
-        anomalies.push({
-          sensor: "temperature",
-          change: tempChange,
-          message: "Terjadi perubahan suhu mendadak."
-        });
-      }
-
-      if (humChange >= 10) {
-        anomalies.push({
-          sensor: "humidity",
-          change: humChange,
-          message: "Terjadi perubahan kelembapan mendadak."
-        });
-      }
-    }
-
-    const status = !enoughData
+    const status = !enoughSensorData
       ? "INSUFFICIENT_DATA"
       : anomalies.length > 0
         ? "ANOMALY"
         : "NORMAL";
 
-    // 5. Mengubah waktu data menjadi WIB
+    // 7. Mengubah waktu data menjadi WIB
     const latestWib = {
       ...latest,
       created_at: formatWIB(latest.created_at)
@@ -195,54 +257,68 @@ export default async function handler(req, res) {
       created_at: formatWIB(item.created_at)
     }));
 
-    // 6. Meminta Gemini menjelaskan hasil deteksi
+    // 8. Meminta Gemini menjelaskan hasil deteksi
     const prompt = `
 Kamu adalah AI Anomaly Detection AirWatch.
 
-Jelaskan hasil pemeriksaan sensor berikut dalam bahasa Indonesia.
+Tugasmu menjelaskan hasil pemeriksaan anomali dari seluruh sensor.
 
-Data terbaru:
+DATA TERBARU:
 ${JSON.stringify(latestWib, null, 2)}
 
-Riwayat data sensor:
+RIWAYAT SENSOR:
 ${JSON.stringify(aiData, null, 2)}
 
-Jumlah data pembanding:
-${validData.length}
+HASIL PEMERIKSAAN SETIAP SENSOR:
+${JSON.stringify(sensorAnalysis, null, 2)}
 
-Status deteksi statistik:
-${status}
-
-Anomali yang ditemukan:
+ANOMALI YANG TERDETEKSI:
 ${JSON.stringify(anomalies, null, 2)}
 
+STATUS KESELURUHAN:
+${status}
+
+PARAMETER SENSOR:
+- temperature: suhu dalam °C dari DHT22.
+- humidity: kelembapan dalam % dari DHT22.
+- pm1: konsentrasi PM1.0 dalam µg/m³ dari PMS5003.
+- pm25: konsentrasi PM2.5 dalam µg/m³ dari PMS5003.
+- pm10: konsentrasi PM10 dalam µg/m³ dari PMS5003.
+- gas_raw: pembacaan ADC mentah MQ135.
+
+ATURAN ANALISIS:
+- Jelaskan setiap parameter yang memiliki data.
+- Prioritaskan parameter yang terdeteksi mengalami anomali.
+- Jelaskan perbedaan nilai terbaru dengan baseline atau pembacaan sebelumnya jika tersedia.
+- Jangan menganggap nilai null sebagai angka nol.
+- Jangan menyebut gas_raw sebagai PPM.
+- Jangan menyimpulkan kualitas udara hanya dari gas_raw.
+- Jangan mengarang nilai sensor atau hasil deteksi.
+- Ambang deteksi statistik bukan batas aman kualitas udara.
+- Jangan menyimpulkan sensor rusak hanya karena terjadi anomali.
+- Jika data pembanding kurang dari 5, jelaskan bahwa deteksi statistik belum cukup kuat.
+- Jika status INSUFFICIENT_DATA, jelaskan bahwa riwayat belum mencukupi.
+- Jangan mengubah hasil deteksi statistik yang sudah diberikan.
+
 ATURAN WAKTU:
-- Semua waktu sudah menggunakan WIB (Asia/Jakarta).
+- Semua waktu menggunakan WIB (Asia/Jakarta).
 - Selalu gunakan WIB ketika menyebutkan waktu.
 - Jangan menyebut UTC.
-- Jangan mengubah atau mengonversi ulang timestamp.
-- Gunakan waktu yang tersedia pada data.
+- Jangan mengonversi ulang timestamp.
 
-Jelaskan:
-1. Kondisi sensor.
-2. Apakah ada anomali.
-3. Perubahan yang terlihat berdasarkan data.
+Jelaskan dengan susunan:
+1. Kondisi sensor saat ini.
+2. Anomali yang ditemukan.
+3. Perubahan nilai sensor.
 4. Rekomendasi pemeriksaan.
 
 GAYA BAHASA:
-- Gunakan bahasa Indonesia yang santai, natural, dan mudah dipahami.
+- Gunakan bahasa Indonesia yang santai dan natural.
 - Jangan terlalu formal atau seperti laporan ilmiah.
-- Jelaskan seperti sedang berbicara langsung dengan pengguna.
+- Gunakan kalimat yang mudah dipahami.
 - Hindari kalimat terlalu panjang.
-- Jangan gunakan Markdown seperti tanda pagar (#) atau tanda bintang (*).
-- Gunakan penomoran biasa jika diperlukan.
-
-ATURAN ANALISIS:
-- Jangan mengubah hasil deteksi statistik.
-- Jangan mengarang data.
-- Jangan menyimpulkan sensor rusak hanya karena ada jeda data.
-- Jangan menyebut anomali sebagai kerusakan perangkat tanpa bukti.
-- Jika data tidak cukup, jelaskan keterbatasannya.
+- Jangan gunakan Markdown seperti tanda pagar atau tanda bintang.
+- Jangan mengarang informasi yang tidak tersedia.
 `;
 
     const aiResponse = await fetch(
@@ -262,7 +338,7 @@ ATURAN ANALISIS:
           ],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 700
+            maxOutputTokens: 1000
           }
         })
       }
@@ -276,7 +352,7 @@ ATURAN ANALISIS:
       return res.status(502).json({
         success: false,
         message: "Gemini gagal menjelaskan hasil deteksi.",
-        details: aiResult.error?.message
+        details: aiResult.error?.message || "Unknown error"
       });
     }
 
@@ -293,6 +369,7 @@ ATURAN ANALISIS:
       totalData: data.length,
       latestData: latest,
       latestDataWib: latestWib,
+      sensorAnalysis,
       anomalies,
       explanation: explanation || "Penjelasan AI tidak tersedia.",
       generatedAt: new Date().toISOString(),
@@ -304,7 +381,7 @@ ATURAN ANALISIS:
 
     return res.status(500).json({
       success: false,
-      message: error.message
+      message: error.message || "Terjadi kesalahan pada server AI."
     });
   }
 }
