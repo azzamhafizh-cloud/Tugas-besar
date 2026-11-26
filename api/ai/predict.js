@@ -1,6 +1,17 @@
 
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function calculateRegression(points, horizonMinutes) {
   const n = points.length;
+
+  if (n < 2) return null;
 
   const meanX = points.reduce((sum, p) => sum + p.x, 0) / n;
   const meanY = points.reduce((sum, p) => sum + p.y, 0) / n;
@@ -95,9 +106,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Ambil hingga 500 data sensor terbaru
+    // 1. Mengambil hingga 500 data sensor terbaru
     const dbResponse = await fetch(
-      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,created_at&order=created_at.desc&limit=500`,
+      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,pm1,pm25,pm10,gas_raw,created_at&order=created_at.desc&limit=500`,
       {
         headers: {
           apikey: supabaseKey,
@@ -107,64 +118,174 @@ export default async function handler(req, res) {
     );
 
     if (!dbResponse.ok) {
+      const errorText = await dbResponse.text();
+      console.error("Supabase error:", errorText);
       throw new Error("Gagal mengambil data Supabase.");
     }
 
     const data = await dbResponse.json();
 
-    // 2. Validasi data sensor dan timestamp
+    if (!data.length) {
+      return res.status(404).json({
+        success: false,
+        message: "Belum ada data sensor."
+      });
+    }
+
+    // 2. Memastikan timestamp valid dan mengurutkan data
     const validData = data
       .filter(item =>
-        Number.isFinite(Number(item.temperature)) &&
-        Number.isFinite(Number(item.humidity)) &&
         item.created_at &&
         Number.isFinite(new Date(item.created_at).getTime())
       )
       .reverse();
 
-    if (validData.length < 10) {
+    if (!validData.length) {
       return res.status(200).json({
         success: true,
         feature: "AI Prediction",
         status: "INSUFFICIENT_DATA",
-        totalData: validData.length,
+        totalData: 0,
         requiredData: 10,
-        message: "Minimal 10 data sensor valid diperlukan.",
         predictions: null,
+        message: "Belum ada timestamp sensor yang valid.",
         generatedAt: new Date().toISOString(),
         generatedAtWib: formatWIB(new Date().toISOString())
       });
     }
 
-    // 3. Hitung durasi riwayat berdasarkan timestamp aktual
-    const firstTime = new Date(validData[0].created_at).getTime();
-    const lastTime = new Date(
-      validData[validData.length - 1].created_at
-    ).getTime();
-
-    const historyDurationMinutes = (lastTime - firstTime) / 60000;
-
-    const sufficientHistory = historyDurationMinutes >= 60;
-
-    const latest = validData[validData.length - 1];
-    const latestTime = new Date(latest.created_at);
-
-    const latestDataWib = {
-      ...latest,
-      created_at: formatWIB(latest.created_at)
+    // 3. Konfigurasi parameter sensor
+    const sensorConfig = {
+      temperature: {
+        label: "Suhu",
+        unit: "°C"
+      },
+      humidity: {
+        label: "Kelembapan",
+        unit: "%"
+      },
+      pm1: {
+        label: "PM1.0",
+        unit: "µg/m³"
+      },
+      pm25: {
+        label: "PM2.5",
+        unit: "µg/m³"
+      },
+      pm10: {
+        label: "PM10",
+        unit: "µg/m³"
+      },
+      gas_raw: {
+        label: "MQ135 ADC",
+        unit: "ADC"
+      }
     };
 
-    // Waktu target prediksi 30 menit ke depan
-    const predictionTargetTime = new Date(
-      latestTime.getTime() + 30 * 60000
-    );
+    const requiredData = 10;
+    const requiredHistoryMinutes = 60;
+    const predictionHorizonMinutes = 30;
 
-    const predictionTargetAtWib = formatWIB(
-      predictionTargetTime.toISOString()
-    );
+    const predictions = {};
+    const sensorHistory = {};
 
-    // 4. Jika riwayat kurang dari 60 menit, jangan membuat prediksi
-    if (!sufficientHistory) {
+    // 4. Menghitung prediksi setiap parameter secara terpisah
+    for (const [key, config] of Object.entries(sensorConfig)) {
+      const parameterData = validData
+        .map(item => ({
+          value: toNumber(item[key]),
+          timestamp: new Date(item.created_at).getTime()
+        }))
+        .filter(item =>
+          item.value !== null &&
+          Number.isFinite(item.timestamp)
+        );
+
+      const totalParameterData = parameterData.length;
+
+      if (totalParameterData === 0) {
+        sensorHistory[key] = {
+          label: config.label,
+          unit: config.unit,
+          totalData: 0,
+          historyDurationMinutes: 0,
+          sufficientData: false,
+          status: "NO_DATA"
+        };
+        continue;
+      }
+
+      const firstTime = parameterData[0].timestamp;
+      const lastTime = parameterData[parameterData.length - 1].timestamp;
+
+      const historyDurationMinutes = (lastTime - firstTime) / 60000;
+
+      const sufficientData =
+        totalParameterData >= requiredData &&
+        historyDurationMinutes >= requiredHistoryMinutes;
+
+      const latestParameter = parameterData[parameterData.length - 1];
+
+      sensorHistory[key] = {
+        label: config.label,
+        unit: config.unit,
+        totalData: totalParameterData,
+        historyDurationMinutes: Number(
+          historyDurationMinutes.toFixed(2)
+        ),
+        sufficientData,
+        current: latestParameter.value,
+        latestTimestampWib: formatWIB(
+          new Date(latestParameter.timestamp).toISOString()
+        ),
+        status: sufficientData
+          ? "READY"
+          : "INSUFFICIENT_DATA"
+      };
+
+      if (!sufficientData) {
+        continue;
+      }
+
+      // Titik regresi menggunakan waktu aktual dalam menit
+      const points = parameterData.map(item => ({
+        x: (item.timestamp - firstTime) / 60000,
+        y: item.value
+      }));
+
+      const prediction = calculateRegression(
+        points,
+        predictionHorizonMinutes
+      );
+
+      if (!prediction) {
+        sensorHistory[key].status = "INSUFFICIENT_DATA";
+        continue;
+      }
+
+      // Target dihitung 30 menit setelah pembacaan terakhir
+      const targetTime = new Date(
+        latestParameter.timestamp +
+        predictionHorizonMinutes * 60000
+      );
+
+      predictions[key] = {
+        ...prediction,
+        unit: config.unit,
+        predictionHorizon: `${predictionHorizonMinutes} minutes`,
+        targetAtWib: formatWIB(targetTime.toISOString())
+      };
+    }
+
+    // 5. Memeriksa apakah ada parameter yang bisa diprediksi
+    const availableParameters = Object.keys(predictions);
+
+    if (availableParameters.length === 0) {
+      const allDurations = Object.values(sensorHistory)
+        .map(item => item.historyDurationMinutes);
+
+      const longestHistory = Math.max(0, ...allDurations);
+
       return res.status(200).json({
         success: true,
         feature: "AI Prediction",
@@ -172,107 +293,118 @@ export default async function handler(req, res) {
         status: "INSUFFICIENT_DATA",
         predictionHorizon: "30 minutes",
         totalData: validData.length,
-        historyDurationMinutes: Number(
-          historyDurationMinutes.toFixed(2)
-        ),
-        requiredHistoryMinutes: 60,
+        requiredData,
+        requiredHistoryMinutes,
+        historyDurationMinutes: longestHistory,
         sufficientHistory: false,
+        sensorHistory,
         predictions: null,
-        latestData: latest,
-        latestDataWib,
-        predictionTargetAtWib,
-        explanation:
-          "Riwayat sensor belum mencapai 60 menit. " +
-          "Sistem menunggu data tambahan agar prediksi lebih layak dihitung.",
+        message:
+          "Belum ada parameter sensor yang memiliki minimal 10 data valid dan riwayat 60 menit.",
         generatedAt: new Date().toISOString(),
         generatedAtWib: formatWIB(new Date().toISOString())
       });
     }
 
-    // 5. Buat titik regresi berdasarkan waktu aktual dalam menit
-    const temperaturePoints = validData.map(item => ({
-      x: (new Date(item.created_at).getTime() - firstTime) / 60000,
-      y: Number(item.temperature)
-    }));
+    // 6. Informasi data terbaru
+    const latest = validData[validData.length - 1];
 
-    const humidityPoints = validData.map(item => ({
-      x: (new Date(item.created_at).getTime() - firstTime) / 60000,
-      y: Number(item.humidity)
-    }));
+    const latestDataWib = {
+      ...latest,
+      created_at: formatWIB(latest.created_at)
+    };
 
-    // 6. Hitung prediksi 30 menit ke depan
-    const temperaturePrediction = calculateRegression(
-      temperaturePoints,
-      30
+    const latestTarget = new Date(
+      new Date(latest.created_at).getTime() +
+      predictionHorizonMinutes * 60000
     );
 
-    const humidityPrediction = calculateRegression(
-      humidityPoints,
-      30
+    const predictionTargetAtWib = formatWIB(
+      latestTarget.toISOString()
     );
 
-    // 7. Siapkan riwayat sensor dengan waktu WIB untuk AI
+    // 7. Menyiapkan riwayat sensor untuk AI
     const historyWib = validData.map(item => ({
       id: item.id,
       device_id: item.device_id,
       temperature: item.temperature,
       humidity: item.humidity,
+      pm1: item.pm1,
+      pm25: item.pm25,
+      pm10: item.pm10,
+      gas_raw: item.gas_raw,
       created_at: formatWIB(item.created_at)
     }));
 
-    // 8. Minta Gemini menjelaskan hasil perhitungan
+    const availablePredictions = Object.fromEntries(
+      Object.entries(predictions).map(([key, value]) => [
+        key,
+        value
+      ])
+    );
+
+    // 8. Meminta Gemini menjelaskan hasil prediksi
     const prompt = `
 Kamu adalah AI Prediction AirWatch.
 
-Jelaskan hasil prediksi berdasarkan regresi linear
-yang sudah dihitung oleh sistem.
+Jelaskan hasil prediksi berdasarkan perhitungan Linear Regression
+yang sudah dilakukan oleh sistem.
 
-Data terbaru:
+DATA SENSOR TERBARU:
 ${JSON.stringify(latestDataWib, null, 2)}
 
-Riwayat sensor:
+RIWAYAT SENSOR:
 ${JSON.stringify(historyWib, null, 2)}
 
-Hasil prediksi:
-${JSON.stringify({
-  temperature: temperaturePrediction,
-  humidity: humidityPrediction
-}, null, 2)}
+STATUS DAN KECUKUPAN DATA:
+${JSON.stringify(sensorHistory, null, 2)}
 
-Durasi riwayat: ${historyDurationMinutes.toFixed(2)} menit.
-Jumlah data: ${validData.length}.
-Target prediksi: 30 menit ke depan.
-Waktu data terbaru: ${latestDataWib.created_at}.
-Perkiraan waktu target prediksi: ${predictionTargetAtWib}.
+HASIL PREDIKSI:
+${JSON.stringify(availablePredictions, null, 2)}
+
+PARAMETER SENSOR:
+- temperature: suhu DHT22 dalam °C.
+- humidity: kelembapan DHT22 dalam %.
+- pm1: PM1.0 PMS5003 dalam µg/m³.
+- pm25: PM2.5 PMS5003 dalam µg/m³.
+- pm10: PM10 PMS5003 dalam µg/m³.
+- gas_raw: nilai ADC mentah MQ135, bukan PPM.
+
+ATURAN PREDIKSI:
+- Prediksi dilakukan 30 menit setelah pembacaan terakhir masing-masing parameter.
+- Gunakan nilai predicted yang diberikan sistem.
+- Jangan menghitung ulang hasil regresi.
+- Jangan mengubah angka hasil perhitungan.
+- Jangan menyebut gas_raw sebagai PPM.
+- Jangan mengubah nilai null menjadi nol.
+- Jangan membuat prediksi untuk parameter yang belum tersedia.
+- Jelaskan parameter yang belum memenuhi syarat data.
+- Jangan menyebut prediksi sebagai kepastian.
+- RMSE bukan jaminan akurasi masa depan.
+- Jangan menyimpulkan kualitas udara hanya dari gas_raw.
+- Jangan mengarang batas aman atau ambang bahaya.
 
 ATURAN WAKTU:
 - Semua timestamp menggunakan WIB (Asia/Jakarta).
 - Selalu gunakan WIB ketika menyebutkan waktu.
 - Jangan menyebut UTC.
-- Jangan mengubah atau mengonversi ulang timestamp.
-- Target prediksi adalah waktu yang sudah diberikan sistem.
-- Jangan menghitung ulang waktu target prediksi.
+- Jangan mengonversi ulang timestamp.
+- Gunakan targetAtWib dari hasil prediksi masing-masing parameter.
 
-Berikan penjelasan dalam bahasa Indonesia:
-1. Perkiraan suhu dan kelembapan pada waktu target prediksi.
-2. Tren perubahan suhu dan kelembapan.
-3. Risiko dan rekomendasi.
-4. Keterbatasan prediksi.
+Jelaskan:
+1. Perkiraan perubahan suhu dan kelembapan.
+2. Perkiraan perubahan PM1.0, PM2.5, dan PM10.
+3. Perkiraan perubahan pembacaan MQ135.
+4. Tren yang terlihat.
+5. Risiko, rekomendasi, dan keterbatasan prediksi.
 
 GAYA BAHASA:
 - Gunakan bahasa Indonesia yang santai, natural, dan mudah dipahami.
 - Jangan terlalu formal atau seperti laporan ilmiah.
 - Jelaskan seperti sedang berbicara langsung dengan pengguna.
-- Hindari kalimat terlalu panjang dan istilah teknis yang tidak diperlukan.
-- Jangan gunakan Markdown seperti tanda pagar (#) atau tanda bintang (*).
+- Hindari kalimat terlalu panjang.
+- Jangan gunakan Markdown seperti tanda pagar atau tanda bintang.
 - Gunakan penomoran biasa jika diperlukan.
-
-ATURAN ANALISIS:
-- Jangan mengubah angka hasil perhitungan.
-- Jangan menyebut RMSE sebagai jaminan akurasi masa depan.
-- Jangan menganggap prediksi sebagai kepastian.
-- Jangan mengarang data.
-- Jika data tidak cukup atau hasil kurang meyakinkan, jelaskan keterbatasannya.
 `;
 
     const aiResponse = await fetch(
@@ -292,7 +424,7 @@ ATURAN ANALISIS:
           ],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 700
+            maxOutputTokens: 1000
           }
         })
       }
@@ -306,7 +438,7 @@ ATURAN ANALISIS:
       return res.status(502).json({
         success: false,
         message: "Gemini gagal menjelaskan hasil prediksi.",
-        details: aiResult.error?.message
+        details: aiResult.error?.message || "Unknown error"
       });
     }
 
@@ -315,23 +447,26 @@ ATURAN ANALISIS:
       .join("")
       .trim();
 
-    // 9. Kirim hasil prediksi
+    // 9. Menentukan status prediksi keseluruhan
+    const allParametersReady = Object.keys(sensorConfig).every(
+      key => sensorHistory[key]?.sufficientData
+    );
+
     return res.status(200).json({
       success: true,
       feature: "AI Prediction",
       model: "gemini-3.1-flash-lite",
-      status: "PREDICTION_AVAILABLE",
+      status: allParametersReady
+        ? "PREDICTION_AVAILABLE"
+        : "PARTIAL_PREDICTION",
       predictionHorizon: "30 minutes",
       totalData: validData.length,
-      historyDurationMinutes: Number(
-        historyDurationMinutes.toFixed(2)
-      ),
-      requiredHistoryMinutes: 60,
-      sufficientHistory: true,
-      predictions: {
-        temperature: temperaturePrediction,
-        humidity: humidityPrediction
-      },
+      requiredData,
+      requiredHistoryMinutes,
+      sufficientHistory: allParametersReady,
+      availableParameters,
+      sensorHistory,
+      predictions,
       latestData: latest,
       latestDataWib,
       predictionTargetAtWib,
