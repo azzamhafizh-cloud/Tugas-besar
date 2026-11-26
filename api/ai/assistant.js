@@ -1,4 +1,13 @@
 
+function toNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function formatWIB(timestamp) {
   const date = new Date(timestamp);
 
@@ -166,7 +175,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Ambil pertanyaan pengguna
+    // 1. Mengambil pertanyaan pengguna
     const { question } = req.body || {};
 
     if (
@@ -186,9 +195,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2. Ambil 100 data sensor terbaru
+    // 2. Mengambil 100 data sensor terbaru
     const dbResponse = await fetch(
-      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,created_at&order=created_at.desc&limit=100`,
+      `${supabaseUrl}/rest/v1/telemetry?select=id,device_id,temperature,humidity,pm1,pm25,pm10,gas_raw,created_at&order=created_at.desc&limit=100`,
       {
         headers: {
           apikey: supabaseKey,
@@ -213,13 +222,48 @@ export default async function handler(req, res) {
 
     const rawData = await dbResponse.json();
 
+    // 3. Konfigurasi seluruh parameter sensor
+    const sensorConfig = {
+      temperature: {
+        label: "Suhu",
+        unit: "°C"
+      },
+      humidity: {
+        label: "Kelembapan",
+        unit: "%"
+      },
+      pm1: {
+        label: "PM1.0",
+        unit: "µg/m³"
+      },
+      pm25: {
+        label: "PM2.5",
+        unit: "µg/m³"
+      },
+      pm10: {
+        label: "PM10",
+        unit: "µg/m³"
+      },
+      gas_raw: {
+        label: "MQ135",
+        unit: "ADC"
+      }
+    };
+
+    // 4. Memvalidasi timestamp dan data sensor
     const validData = rawData
-      .filter(item =>
-        Number.isFinite(Number(item.temperature)) &&
-        Number.isFinite(Number(item.humidity)) &&
-        item.created_at &&
-        Number.isFinite(new Date(item.created_at).getTime())
-      )
+      .filter(item => {
+        if (
+          !item.created_at ||
+          !Number.isFinite(new Date(item.created_at).getTime())
+        ) {
+          return false;
+        }
+
+        return Object.keys(sensorConfig).some(
+          key => toNumber(item[key]) !== null
+        );
+      })
       .reverse();
 
     if (validData.length === 0) {
@@ -231,7 +275,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 3. Ambil data terbaru
+    // 5. Mengambil data terbaru
     const latest = validData[validData.length - 1];
 
     const latestTimestamp = new Date(latest.created_at);
@@ -241,45 +285,98 @@ export default async function handler(req, res) {
       (Date.now() - latestTimestamp.getTime()) / 60000
     );
 
-    // 4. Menghitung ringkasan riwayat
-    const temperatures = validData.map(item =>
-      Number(item.temperature)
-    );
+    // 6. Menghitung ringkasan masing-masing sensor
+    const sensors = {};
 
-    const humidities = validData.map(item =>
-      Number(item.humidity)
-    );
+    for (const [key, config] of Object.entries(sensorConfig)) {
+      const parameterData = validData
+        .map(item => ({
+          value: toNumber(item[key]),
+          timestamp: item.created_at
+        }))
+        .filter(item => item.value !== null);
 
-    const average = values =>
-      Number((
-        values.reduce((sum, value) => sum + value, 0) /
-        values.length
-      ).toFixed(2));
+      if (parameterData.length === 0) {
+        sensors[key] = {
+          label: config.label,
+          unit: config.unit,
+          totalData: 0,
+          latest: null,
+          average: null,
+          minimum: null,
+          maximum: null,
+          firstRecord: null,
+          lastRecord: null,
+          status: "NO_DATA"
+        };
 
+        continue;
+      }
+
+      const values = parameterData.map(item => item.value);
+      const latestParameter = parameterData[parameterData.length - 1];
+
+      const parameterAgeMinutes = Math.max(
+        0,
+        (Date.now() - new Date(latestParameter.timestamp).getTime()) / 60000
+      );
+
+      sensors[key] = {
+        label: config.label,
+        unit: config.unit,
+        totalData: parameterData.length,
+        latest: latestParameter.value,
+        latestTimestampWib: formatWIB(latestParameter.timestamp),
+        ageMinutes: Number(parameterAgeMinutes.toFixed(2)),
+        average: Number(
+          (
+            values.reduce((sum, value) => sum + value, 0) /
+            values.length
+          ).toFixed(2)
+        ),
+        minimum: Math.min(...values),
+        maximum: Math.max(...values),
+        firstRecord: formatWIB(parameterData[0].timestamp),
+        lastRecord: formatWIB(latestParameter.timestamp),
+        status: "AVAILABLE"
+      };
+    }
+
+    // 7. Ringkasan umum untuk mempertahankan kompatibilitas respons
     const summary = {
       totalData: validData.length,
+
       latest: {
-        temperature: Number(latest.temperature),
-        humidity: Number(latest.humidity),
+        id: latest.id,
+        device_id: latest.device_id,
+        temperature: toNumber(latest.temperature),
+        humidity: toNumber(latest.humidity),
+        pm1: toNumber(latest.pm1),
+        pm25: toNumber(latest.pm25),
+        pm10: toNumber(latest.pm10),
+        gas_raw: toNumber(latest.gas_raw),
         createdAt: formatWIB(latest.created_at),
         ageMinutes: Number(ageMinutes.toFixed(2))
       },
+
       history: {
-        averageTemperature: average(temperatures),
-        averageHumidity: average(humidities),
-        minimumTemperature: Math.min(...temperatures),
-        maximumTemperature: Math.max(...temperatures),
-        minimumHumidity: Math.min(...humidities),
-        maximumHumidity: Math.max(...humidities),
+        averageTemperature: sensors.temperature.average,
+        averageHumidity: sensors.humidity.average,
+        minimumTemperature: sensors.temperature.minimum,
+        maximumTemperature: sensors.temperature.maximum,
+        minimumHumidity: sensors.humidity.minimum,
+        maximumHumidity: sensors.humidity.maximum,
         firstRecord: formatWIB(validData[0].created_at),
         lastRecord: formatWIB(latest.created_at)
-      }
+      },
+
+      sensors
     };
 
-    // 5. Menyiapkan prompt AI
+    // 8. Menyiapkan prompt AI
     const prompt = `
 Kamu adalah AI Assistant AirWatch, asisten untuk membantu
-pengguna memahami data monitoring sensor DHT22.
+pengguna memahami data monitoring lingkungan.
 
 DATA SENSOR AIRWATCH:
 ${JSON.stringify(summary, null, 2)}
@@ -287,25 +384,46 @@ ${JSON.stringify(summary, null, 2)}
 PERTANYAAN PENGGUNA:
 ${question.trim()}
 
-ATURAN WAKTU:
-- Semua waktu pada data menggunakan WIB (Asia/Jakarta).
-- Selalu gunakan WIB ketika menyebutkan waktu.
-- Jangan menyebut UTC.
-- Jangan mengubah atau mengonversi ulang timestamp.
+INFORMASI SENSOR:
+1. DHT22:
+   - temperature: suhu dalam °C.
+   - humidity: kelembapan dalam %.
+
+2. PMS5003:
+   - pm1: konsentrasi PM1.0 dalam µg/m³.
+   - pm25: konsentrasi PM2.5 dalam µg/m³.
+   - pm10: konsentrasi PM10 dalam µg/m³.
+
+3. MQ135:
+   - gas_raw: nilai ADC mentah.
+   - Nilai ADC bukan PPM dan tidak boleh dianggap sebagai konsentrasi gas.
+   - Jangan mengubah ADC menjadi PPM tanpa kalibrasi dan metode konversi yang valid.
 
 ATURAN MENJAWAB:
 1. Jawab dalam bahasa Indonesia yang natural dan mudah dipahami.
 2. Gunakan data sensor yang diberikan sebagai sumber utama.
 3. Jangan mengarang nilai sensor atau informasi yang tidak tersedia.
-4. Bedakan kondisi terkini dan rata-rata historis.
-5. Jika data terbaru berumur lebih dari 5 menit, jelaskan bahwa data mungkin tidak terkini.
-6. Jika ditanya tentang anomali, jelaskan bahwa ringkasan ini tidak menjalankan pemeriksaan anomali secara langsung.
-7. Jika ditanya prediksi, jelaskan bahwa ringkasan ini bukan hasil perhitungan prediksi.
-8. Berikan rekomendasi yang relevan jika diperlukan.
-9. Jangan mengaku mengendalikan perangkat atau sensor.
-10. Jawab secara ringkas tetapi jelas.
-11. Jika pertanyaan tidak berkaitan langsung dengan sensor, tetap jawab dengan sopan jika masih relevan dengan AirWatch.
-12. Jika informasi tidak tersedia, katakan dengan jujur.
+4. Jangan mengubah nilai null menjadi nol.
+5. Jika parameter berstatus NO_DATA, jelaskan bahwa datanya belum tersedia.
+6. Bedakan kondisi terkini dan rata-rata historis.
+7. Perhatikan waktu pembacaan setiap sensor karena waktu pembaruan dapat berbeda.
+8. Jika data sensor terbaru berumur lebih dari 5 menit, jelaskan bahwa data mungkin tidak terkini.
+9. Jangan menyimpulkan kualitas udara hanya dari nilai ADC MQ135.
+10. Jangan membuat nilai AQI sendiri jika tidak tersedia.
+11. Jika ditanya tentang anomali, jelaskan bahwa ringkasan ini tidak menjalankan pemeriksaan anomali secara langsung.
+12. Jika ditanya prediksi, jelaskan bahwa ringkasan ini bukan hasil perhitungan prediksi.
+13. Jangan mengarang batas aman atau ambang bahaya.
+14. Berikan rekomendasi yang relevan jika diperlukan.
+15. Jangan mengaku mengendalikan perangkat atau sensor.
+16. Jika pertanyaan tidak berkaitan langsung dengan sensor, tetap jawab dengan sopan jika masih relevan dengan AirWatch.
+17. Jika informasi tidak tersedia, katakan dengan jujur.
+18. Jawab secara ringkas tetapi jelas.
+
+ATURAN WAKTU:
+- Semua waktu menggunakan WIB (Asia/Jakarta).
+- Selalu gunakan WIB ketika menyebutkan waktu.
+- Jangan menyebut UTC.
+- Jangan mengonversi ulang timestamp.
 
 GAYA BAHASA:
 - Gunakan bahasa seperti sedang berbicara langsung dengan pengguna.
@@ -315,7 +433,7 @@ GAYA BAHASA:
 - Gunakan penomoran biasa jika diperlukan.
 `;
 
-    // 6. Mengirim pertanyaan ke Gemini
+    // 9. Mengirim pertanyaan ke Gemini
     let answer;
 
     try {
@@ -332,7 +450,7 @@ GAYA BAHASA:
       });
     }
 
-    // 7. Mengirim jawaban ke pengguna
+    // 10. Mengirim jawaban ke pengguna
     return res.status(200).json({
       success: true,
       feature: "AI Assistant",
