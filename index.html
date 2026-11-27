@@ -234,14 +234,32 @@
       </div>
     </div>
     <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
-      <h2 class="font-semibold">Batas Parameter</h2>
-      <p class="text-sm text-zinc-500 mt-1">Batas ini digunakan untuk penanda suhu di dashboard. Pengaturan tidak mengubah data sensor di Supabase.</p>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-        <label class="text-sm">Batas peringatan suhu (°C)<input id="limitTemp" type="number" min="-40" max="80" step="0.5" value="50" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
-        <label class="text-sm">Batas peringatan PM2.5 (µg/m³)<input id="limitPM25" type="number" min="0" max="1000" step="1" value="35" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 class="font-semibold">Batas Parameter</h2>
+          <p class="text-sm text-zinc-500 mt-1">Batas disimpan ke Supabase dan digunakan dashboard. Perangkat dapat menerapkannya setelah firmware membaca konfigurasi terbaru.</p>
+        </div>
+        <span id="configSyncStatus" class="text-xs text-zinc-500">Memuat konfigurasi...</span>
       </div>
-      <button id="saveLimits" class="mt-4 bg-zinc-950 text-white text-sm px-4 py-2 rounded-md">Simpan Batas</button>
-      <p id="limitMessage" class="text-xs text-zinc-500 mt-2" aria-live="polite">Pengaturan awal: suhu 50°C dan PM2.5 35 µg/m³.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
+        <label class="text-sm">Suhu maksimum (°C)<input id="limitTemp" type="number" min="-40" max="80" step="0.1" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+        <label class="text-sm">Kelembapan minimum (%)<input id="limitMinHumidity" type="number" min="0" max="100" step="0.1" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+        <label class="text-sm">Kelembapan maksimum (%)<input id="limitMaxHumidity" type="number" min="0" max="100" step="0.1" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+        <label class="text-sm">PM1 maksimum (µg/m³)<input id="limitPM1" type="number" min="0" max="1000" step="1" placeholder="Nonaktif jika kosong" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+        <label class="text-sm">PM2.5 maksimum (µg/m³)<input id="limitPM25" type="number" min="0" max="1000" step="1" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+        <label class="text-sm">PM10 maksimum (µg/m³)<input id="limitPM10" type="number" min="0" max="1000" step="1" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+        <label class="text-sm">Gas MQ135 maksimum (ADC)<input id="limitGas" type="number" min="0" max="4095" step="1" placeholder="Nonaktif jika kosong" class="block w-full mt-1 border border-zinc-300 rounded-md px-3 py-2"></label>
+      </div>
+      <label class="mt-4 flex items-center gap-3 text-sm cursor-pointer">
+        <input id="gasAlarmEnabled" type="checkbox" class="w-4 h-4 accent-zinc-900">
+        Aktifkan alarm untuk batas gas MQ135
+      </label>
+      <p class="text-xs text-zinc-500 mt-2">Kolom PM1, PM10, dan gas boleh dikosongkan untuk menonaktifkan batasnya. Nilai gas MQ135 merupakan ADC mentah (0–4095), bukan PPM.</p>
+      <div class="flex flex-wrap items-center gap-3 mt-4">
+        <button id="saveLimits" class="bg-zinc-950 text-white text-sm px-4 py-2 rounded-md">Simpan Batas</button>
+        <button id="reloadLimits" class="border border-zinc-300 text-sm px-4 py-2 rounded-md">Muat Ulang</button>
+      </div>
+      <p id="limitMessage" class="text-xs text-zinc-500 mt-2" aria-live="polite">Mengambil konfigurasi perangkat dari server.</p>
     </div>
     <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
       <h2 class="font-semibold">Status Sensor &amp; Debug</h2>
@@ -345,7 +363,16 @@ const SENSOR_CONFIG = {
 };
 
 const S = {
-  limits: { temp: 50, pm25: 35 },
+  limits: {
+    max_temperature: 50,
+    min_humidity: 20,
+    max_humidity: 80,
+    max_pm1: null,
+    max_pm25: 35,
+    max_pm10: 50,
+    max_gas_raw: null,
+    gas_alarm_enabled: false
+  },
   labels: [],
   series: {
     temperature: [],
@@ -464,21 +491,20 @@ function normalizeRow(row) {
 ========================= */
 
 function statusFor(row) {
-  const temperature = row.temperature;
-  const pm25 = row.pm25;
+  const values = normalizeRow(row);
+  const checks = [
+    values.temperature !== null && S.limits.max_temperature !== null && values.temperature > S.limits.max_temperature,
+    values.humidity !== null && S.limits.min_humidity !== null && values.humidity < S.limits.min_humidity,
+    values.humidity !== null && S.limits.max_humidity !== null && values.humidity > S.limits.max_humidity,
+    values.pm1 !== null && S.limits.max_pm1 !== null && values.pm1 > S.limits.max_pm1,
+    values.pm25 !== null && S.limits.max_pm25 !== null && values.pm25 > S.limits.max_pm25,
+    values.pm10 !== null && S.limits.max_pm10 !== null && values.pm10 > S.limits.max_pm10,
+    S.limits.gas_alarm_enabled === true && values.gas_raw !== null && S.limits.max_gas_raw !== null && values.gas_raw > S.limits.max_gas_raw
+  ];
 
-  if (temperature === null && pm25 === null) {
-    return 'Belum tersedia';
-  }
-
-  if (
-    (temperature !== null && temperature > S.limits.temp) ||
-    (pm25 !== null && pm25 > S.limits.pm25)
-  ) {
-    return 'Waspada';
-  }
-
-  return 'Aman';
+  const hasData = [values.temperature, values.humidity, values.pm1, values.pm25, values.pm10, values.gas_raw].some(value => typeof value === 'number' && Number.isFinite(value));
+  if (!hasData) return 'Belum tersedia';
+  return checks.some(Boolean) ? 'Waspada' : 'Aman';
 }
 
 /* =========================
@@ -788,8 +814,9 @@ function updateDashboardUI(row) {
     aqi === null ? 'Belum tersedia dari perangkat' : 'Nilai AQI dari perangkat';
 
   $('bTemp').style.width =
-    t === null ? '0%' :
-    clamp(t / S.limits.temp * 100, 0, 100) + '%';
+    t === null || S.limits.max_temperature === null || S.limits.max_temperature <= 0
+      ? '0%'
+      : clamp(t / S.limits.max_temperature * 100, 0, 100) + '%';
 
   $('bHum').style.width =
     h === null ? '0%' : clamp(h, 0, 100) + '%';
@@ -800,7 +827,7 @@ function updateDashboardUI(row) {
   $('bAqi').style.width =
     aqi === null ? '0%' : clamp(aqi / 500 * 100, 0, 100) + '%';
 
-  $('tempLimitLabel').textContent = `${S.limits.temp}°C`;
+  $('tempLimitLabel').textContent = `${S.limits.max_temperature ?? 'Nonaktif'}°C`;
 
   $('aqiCat').textContent = aqi === null
     ? 'Kategori: belum tersedia'
@@ -1412,74 +1439,135 @@ $('aiAssistantForm').addEventListener('submit', async event => {
    10. PENGATURAN BATAS
 ========================= */
 
-function loadLimits() {
-  try {
-    const saved = JSON.parse(
-      localStorage.getItem('airwatchLimits') || '{}'
-    );
+const LIMIT_FIELDS = {
+  max_temperature: 'limitTemp',
+  min_humidity: 'limitMinHumidity',
+  max_humidity: 'limitMaxHumidity',
+  max_pm1: 'limitPM1',
+  max_pm25: 'limitPM25',
+  max_pm10: 'limitPM10',
+  max_gas_raw: 'limitGas'
+};
 
-    if (
-      saved.temp !== undefined &&
-      numeric(saved.temp) !== null
-    ) {
-      S.limits.temp = Number(saved.temp);
-    }
-
-    if (
-      saved.pm25 !== undefined &&
-      numeric(saved.pm25) !== null
-    ) {
-      S.limits.pm25 = Number(saved.pm25);
-    }
-
-  } catch {
-    // Gunakan batas default.
+function applyLimitsToForm() {
+  for (const [key, id] of Object.entries(LIMIT_FIELDS)) {
+    $(id).value = S.limits[key] ?? '';
   }
-
-  $('limitTemp').value = S.limits.temp;
-  $('limitPM25').value = S.limits.pm25;
-
-  $('tempLimitLabel').textContent =
-    `${S.limits.temp}°C`;
+  $('gasAlarmEnabled').checked = S.limits.gas_alarm_enabled === true;
+  $('tempLimitLabel').textContent = `${S.limits.max_temperature ?? 'Nonaktif'}°C`;
 }
 
-$('saveLimits').addEventListener('click', () => {
-  const temp = numeric($('limitTemp').value);
-  const pm25 = numeric($('limitPM25').value);
+function normalizeConfig(data) {
+  const result = {};
+  for (const key of Object.keys(LIMIT_FIELDS)) {
+    result[key] = numeric(data?.[key]);
+  }
+  result.gas_alarm_enabled = data?.gas_alarm_enabled === true;
+  return result;
+}
 
-  if (
-    temp === null ||
-    pm25 === null ||
-    temp < -40 ||
-    temp > 80 ||
-    pm25 < 0 ||
-    pm25 > 1000
-  ) {
-    $('limitMessage').textContent =
-      'Nilai tidak valid. Suhu harus -40 sampai 80°C dan PM2.5 0 sampai 1000 µg/m³.';
+async function loadLimits() {
+  $('configSyncStatus').textContent = 'Mengambil dari server...';
+  $('limitMessage').textContent = 'Mengambil konfigurasi perangkat dari server.';
 
-    return;
+  try {
+    const response = await fetch('/api/config', {
+      method: 'GET',
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' }
+    });
+    const result = await response.json();
+
+    if (!response.ok || result.success !== true || !result.data) {
+      throw new Error(result.error || 'Konfigurasi tidak berhasil dimuat.');
+    }
+
+    S.limits = normalizeConfig(result.data);
+    applyLimitsToForm();
+    $('configSyncStatus').textContent = 'Tersinkron ke server';
+    $('limitMessage').textContent = 'Konfigurasi berhasil dimuat dari Supabase.';
+
+    if (S.latest) updateDashboardUI(S.latest);
+  } catch (error) {
+    $('configSyncStatus').textContent = 'Gagal tersinkron';
+    $('limitMessage').textContent = `Gagal memuat konfigurasi: ${error.message}`;
+    console.error('Load config error:', error);
+  }
+}
+
+function readLimitsFromForm() {
+  const limits = {};
+  for (const [key, id] of Object.entries(LIMIT_FIELDS)) {
+    const raw = $(id).value.trim();
+    limits[key] = raw === '' ? null : numeric(raw);
+    if (raw !== '' && limits[key] === null) {
+      throw new Error(`Nilai ${$(id).previousElementSibling?.textContent || id} tidak valid.`);
+    }
+  }
+  limits.gas_alarm_enabled = $('gasAlarmEnabled').checked;
+
+  const ranges = {
+    max_temperature: [-40, 80, 'Suhu maksimum harus antara -40 sampai 80°C.'],
+    min_humidity: [0, 100, 'Kelembapan minimum harus antara 0 sampai 100%.'],
+    max_humidity: [0, 100, 'Kelembapan maksimum harus antara 0 sampai 100%.'],
+    max_pm1: [0, 1000, 'Batas PM1 harus antara 0 sampai 1000.'],
+    max_pm25: [0, 1000, 'Batas PM2.5 harus antara 0 sampai 1000.'],
+    max_pm10: [0, 1000, 'Batas PM10 harus antara 0 sampai 1000.'],
+    max_gas_raw: [0, 4095, 'Batas gas MQ135 harus antara 0 sampai 4095.']
+  };
+
+  for (const [key, [min, max, message]] of Object.entries(ranges)) {
+    const value = limits[key];
+    if (value !== null && (value < min || value > max)) throw new Error(message);
   }
 
-  S.limits = { temp, pm25 };
-
-  localStorage.setItem(
-    'airwatchLimits',
-    JSON.stringify(S.limits)
-  );
-
-  $('limitMessage').textContent =
-    'Batas berhasil disimpan di browser ini.';
-
-  $('tempLimitLabel').textContent =
-    `${temp}°C`;
-
-  if (S.latest) {
-    clearSeries();
-    lastRecordId = null;
-    fetchRealData();
+  if (limits.min_humidity !== null && limits.max_humidity !== null && limits.min_humidity > limits.max_humidity) {
+    throw new Error('Kelembapan minimum tidak boleh lebih besar dari kelembapan maksimum.');
   }
-});
+  if (limits.gas_alarm_enabled && limits.max_gas_raw === null) {
+    throw new Error('Isi batas gas MQ135 terlebih dahulu atau nonaktifkan alarm gas.');
+  }
+
+  return limits;
+}
+
+async function saveLimits() {
+  const button = $('saveLimits');
+  button.disabled = true;
+  button.textContent = 'Menyimpan...';
+  $('limitMessage').textContent = 'Mengirim konfigurasi ke server...';
+
+  try {
+    const limits = readLimitsFromForm();
+    const response = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ device_id: 'ESP32-AIRWATCH', ...limits })
+    });
+    const result = await response.json();
+
+    if (!response.ok || result.success !== true) {
+      throw new Error(result.error || result.message || 'Server menolak konfigurasi.');
+    }
+
+    S.limits = normalizeConfig(result.data || limits);
+    applyLimitsToForm();
+    $('configSyncStatus').textContent = 'Tersinkron ke server';
+    $('limitMessage').textContent = 'Batas berhasil disimpan ke Supabase.';
+
+    if (S.latest) updateDashboardUI(S.latest);
+  } catch (error) {
+    $('configSyncStatus').textContent = 'Gagal menyimpan';
+    $('limitMessage').textContent = `Tidak dapat menyimpan: ${error.message}`;
+    console.error('Save config error:', error);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Simpan Batas';
+  }
+}
+
+$('saveLimits').addEventListener('click', saveLimits);
+$('reloadLimits').addEventListener('click', loadLimits);
 
 /* =========================
    11. NAVIGASI
