@@ -55,6 +55,7 @@
   .aw-hero-cta,.aw-hero-secondary{display:inline-flex;align-items:center;gap:14px;border-radius:999px;padding:12px 19px;font-size:13px;font-weight:700;transition:.2s}
   .aw-hero-cta{background:#fffdf7;color:#155c55}.aw-hero-cta:hover{background:#eaf4ed;transform:translateY(-1px)}.aw-hero-secondary{border:1px solid rgba(255,255,255,.45);color:white;background:rgba(255,255,255,.08);backdrop-filter:blur(8px)}.aw-hero-secondary:hover{background:rgba(255,255,255,.18)}
   .aw-hero-orbit{position:absolute;right:8%;top:50%;width:280px;height:280px;transform:translateY(-50%);z-index:2;opacity:.9}@media(max-width:850px){.aw-hero-orbit{right:-65px;opacity:.35}}@media(max-width:600px){.aw-hero-orbit{display:none}.aw-hero{min-height:360px}.aw-hero h2{font-size:2.3rem}}
+  .aw-hero-logo{width:68px;height:68px;margin-bottom:5px;filter:drop-shadow(0 2px 8px rgba(255,255,255,.15))}.aw-orbit-core strong{font-size:11px;letter-spacing:.16em;color:#f4fff8}.aw-orbit-core small{margin-top:4px}
   .aw-orbit-ring{position:absolute;inset:20px;border:1px solid rgba(255,255,255,.3);border-radius:50%;transform:rotate(-28deg) scaleY(.55)}.ring-b{inset:0;transform:rotate(55deg) scaleY(.55);border-color:rgba(255,255,255,.2)}.aw-orbit-core{position:absolute;inset:85px;border-radius:50%;background:rgba(244,250,244,.14);border:1px solid rgba(255,255,255,.35);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;flex-direction:column;box-shadow:0 15px 60px rgba(0,0,0,.12)}.aw-orbit-core span{font-size:42px;font-weight:800;letter-spacing:-.08em}.aw-orbit-core small{font-size:9px;letter-spacing:.22em;color:#d9eee5}.aw-orbit-dot{position:absolute;width:13px;height:13px;border-radius:50%;background:#d6f0d8;box-shadow:0 0 18px rgba(214,240,216,.8)}.dot-a{top:37px;left:72px}.dot-b{right:28px;top:122px}.dot-c{bottom:34px;left:104px}
   .aw-feature{display:flex;align-items:center;gap:11px;padding:9px 13px;min-width:0}.aw-feature+.aw-feature{border-left:1px solid #eee9df}@media(max-width:767px){.aw-feature:nth-child(3){border-left:0}.aw-feature:nth-child(n+3){border-top:1px solid #eee9df}}.aw-feature-icon{display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;border-radius:50%;background:#183f3d;color:white;font-size:19px}.aw-feature b{display:block;font-size:12px;color:#243e3b}.aw-feature small{display:block;margin-top:3px;font-size:10px;color:#89918a;white-space:nowrap}
   #banner,.bg-white.border,#view-ai .bg-zinc-950{border-radius:20px!important;box-shadow:0 8px 28px rgba(32,55,48,.055)!important}
@@ -108,7 +109,9 @@
 <aside id="sidebar" class="fixed inset-y-0 left-0 w-64 bg-zinc-950 text-zinc-300 z-40 flex flex-col -translate-x-full lg:translate-x-0 transition-transform duration-200">
   <div class="px-5 py-5 border-b border-zinc-800">
     <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-md bg-white text-zinc-950 grid place-items-center font-bold">A</div>
+      <div class="w-9 h-9 rounded-xl grid place-items-center shadow-sm" style="background:linear-gradient(145deg,#104c49,#2b8879)" aria-label="Logo AirWatch">
+        <svg viewBox="0 0 64 64" class="w-7 h-7" role="img" aria-label="AirWatch"><path d="M8 25c7-8 16-8 23 0 5 6 11 6 16 1M7 36c8-7 16-7 23 0 5 5 11 5 17 0M14 47c6-5 12-5 18 0" fill="none" stroke="#f4fff8" stroke-width="4.5" stroke-linecap="round"/><circle cx="49" cy="15" r="5" fill="#c8f2c9"/></svg>
+      </div>
       <div>
         <p class="text-white font-semibold leading-tight">AirWatch</p>
         <p class="text-xs text-zinc-500">IoT Air Quality Platform</p>
@@ -176,7 +179,9 @@
           <button type="button" class="aw-hero-secondary" onclick="document.querySelector('[data-view=ai]').click()">Buka AI AirWatch</button>
         </div>
       </div>
-      <div class="aw-hero-orbit" aria-hidden="true"><div class="aw-orbit-ring ring-a"></div><div class="aw-orbit-ring ring-b"></div><div class="aw-orbit-core"><span>AW</span><small>LIVE DATA</small></div><i class="aw-orbit-dot dot-a"></i><i class="aw-orbit-dot dot-b"></i><i class="aw-orbit-dot dot-c"></i></div>
+      <div class="aw-hero-orbit" aria-hidden="true"><div class="aw-orbit-ring ring-a"></div><div class="aw-orbit-ring ring-b"></div><div class="aw-orbit-core">
+        <svg viewBox="0 0 64 64" class="aw-hero-logo" aria-hidden="true"><path d="M8 25c7-8 16-8 23 0 5 6 11 6 16 1M7 36c8-7 16-7 23 0 5 5 11 5 17 0M14 47c6-5 12-5 18 0" fill="none" stroke="#f4fff8" stroke-width="4.5" stroke-linecap="round"/><circle cx="49" cy="15" r="5" fill="#c8f2c9"/></svg>
+        <strong>AIRWATCH</strong><small>LIVE DATA</small></div><i class="aw-orbit-dot dot-a"></i><i class="aw-orbit-dot dot-b"></i><i class="aw-orbit-dot dot-c"></i></div>
       <div class="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/25 to-transparent"></div>
     </div>
     <div class="aw-feature-strip grid grid-cols-2 gap-3 rounded-2xl border border-[#e9e4d8] bg-[#fffdf7] p-3 shadow-sm md:grid-cols-4 md:gap-0 md:p-4">
