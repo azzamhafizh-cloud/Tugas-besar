@@ -288,6 +288,9 @@
         <button id="btnAiAnalyze" class="mt-4 w-full bg-zinc-950 text-white text-sm px-3 py-2 rounded-md hover:bg-zinc-800">Jalankan Monitoring</button>
         <div id="aiAnalyzeStatus" class="text-xs text-zinc-500 mt-3" aria-live="polite">Belum dijalankan.</div>
         <div id="aiAnalyzeResult" class="mt-3 text-sm text-zinc-700 whitespace-pre-wrap break-words"></div>
+        <div class="mt-3 flex justify-end">
+          <button id="btnDeleteAiAnalyze" type="button" class="hidden border border-red-200 text-red-700 text-xs px-3 py-1.5 rounded-md hover:bg-red-50">Hapus Hasil</button>
+        </div>
       </div>
 
       <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
@@ -299,6 +302,9 @@
         <button id="btnAiAnomaly" class="mt-4 w-full bg-zinc-950 text-white text-sm px-3 py-2 rounded-md hover:bg-zinc-800">Periksa Anomali</button>
         <div id="aiAnomalyStatus" class="text-xs text-zinc-500 mt-3" aria-live="polite">Belum dijalankan.</div>
         <div id="aiAnomalyResult" class="mt-3 text-sm text-zinc-700 whitespace-pre-wrap break-words"></div>
+        <div class="mt-3 flex justify-end">
+          <button id="btnDeleteAiAnomaly" type="button" class="hidden border border-red-200 text-red-700 text-xs px-3 py-1.5 rounded-md hover:bg-red-50">Hapus Hasil</button>
+        </div>
       </div>
 
       <div class="bg-white border border-zinc-200 rounded-lg shadow-sm p-5">
@@ -310,6 +316,9 @@
         <button id="btnAiPredict" class="mt-4 w-full bg-zinc-950 text-white text-sm px-3 py-2 rounded-md hover:bg-zinc-800">Jalankan Prediksi</button>
         <div id="aiPredictStatus" class="text-xs text-zinc-500 mt-3" aria-live="polite">Belum dijalankan.</div>
         <div id="aiPredictResult" class="mt-3 text-sm text-zinc-700 whitespace-pre-wrap break-words"></div>
+        <div class="mt-3 flex justify-end">
+          <button id="btnDeleteAiPredict" type="button" class="hidden border border-red-200 text-red-700 text-xs px-3 py-1.5 rounded-md hover:bg-red-50">Hapus Hasil</button>
+        </div>
       </div>
     </div>
 
@@ -1206,6 +1215,7 @@ $('btnAiAnalyze').addEventListener('click', async () => {
     'Mengambil data dan meminta analisis AI...';
 
   $('aiAnalyzeResult').textContent = '';
+  $('btnDeleteAiAnalyze').classList.add('hidden');
 
   try {
     const result = await callAIEndpoint(
@@ -1220,6 +1230,7 @@ $('btnAiAnalyze').addEventListener('click', async () => {
       result.analysis ||
       result.message ||
       'Analisis berhasil, tetapi teks tidak tersedia.';
+    $('btnDeleteAiAnalyze').classList.remove('hidden');
 
   } catch (error) {
     showAIError(
@@ -1227,6 +1238,7 @@ $('btnAiAnalyze').addEventListener('click', async () => {
       'aiAnalyzeResult',
       error
     );
+    $('btnDeleteAiAnalyze').classList.remove('hidden');
   } finally {
     setAIButtonLoading(
       button,
@@ -1247,6 +1259,7 @@ $('btnAiAnomaly').addEventListener('click', async () => {
     'Memeriksa pola data sensor...';
 
   $('aiAnomalyResult').textContent = '';
+  $('btnDeleteAiAnomaly').classList.add('hidden');
 
   try {
     const result = await callAIEndpoint(
@@ -1277,6 +1290,7 @@ $('btnAiAnomaly').addEventListener('click', async () => {
       result.explanation ||
       result.message ||
       'Pemeriksaan selesai.';
+    $('btnDeleteAiAnomaly').classList.remove('hidden');
 
   } catch (error) {
     showAIError(
@@ -1284,6 +1298,7 @@ $('btnAiAnomaly').addEventListener('click', async () => {
       'aiAnomalyResult',
       error
     );
+    $('btnDeleteAiAnomaly').classList.remove('hidden');
   } finally {
     setAIButtonLoading(
       button,
@@ -1304,6 +1319,7 @@ $('btnAiPredict').addEventListener('click', async () => {
     'Memeriksa riwayat dan menghitung prediksi...';
 
   $('aiPredictResult').textContent = '';
+  $('btnDeleteAiPredict').classList.add('hidden');
 
   try {
     const result = await callAIEndpoint(
@@ -1374,6 +1390,7 @@ $('btnAiPredict').addEventListener('click', async () => {
         result.message ||
         'Riwayat sensor belum mencukupi untuk membuat prediksi.';
     }
+    $('btnDeleteAiPredict').classList.remove('hidden');
 
   } catch (error) {
     showAIError(
@@ -1381,6 +1398,7 @@ $('btnAiPredict').addEventListener('click', async () => {
       'aiPredictResult',
       error
     );
+    $('btnDeleteAiPredict').classList.remove('hidden');
   } finally {
     setAIButtonLoading(
       button,
@@ -1388,6 +1406,31 @@ $('btnAiPredict').addEventListener('click', async () => {
       'Jalankan Prediksi'
     );
   }
+});
+
+/* HAPUS HASIL AI: hanya membersihkan tampilan, tidak menghapus data Supabase */
+
+$('btnDeleteAiAnalyze').addEventListener('click', () => {
+  if (!window.confirm('Hapus hasil AI Monitoring yang sedang ditampilkan?')) return;
+  $('aiAnalyzeStatus').textContent = 'Belum dijalankan.';
+  $('aiAnalyzeResult').textContent = '';
+  $('btnDeleteAiAnalyze').classList.add('hidden');
+});
+
+$('btnDeleteAiAnomaly').addEventListener('click', () => {
+  if (!window.confirm('Hapus hasil AI Anomaly yang sedang ditampilkan?')) return;
+  $('aiAnomalyStatus').textContent = 'Belum dijalankan.';
+  $('aiAnomalyResult').textContent = '';
+  $('aiAnomalyBadge').textContent = 'Belum diperiksa';
+  $('aiAnomalyBadge').className = 'text-xs rounded-full bg-zinc-100 px-2 py-1 text-zinc-600';
+  $('btnDeleteAiAnomaly').classList.add('hidden');
+});
+
+$('btnDeleteAiPredict').addEventListener('click', () => {
+  if (!window.confirm('Hapus hasil AI Prediction yang sedang ditampilkan?')) return;
+  $('aiPredictStatus').textContent = 'Belum dijalankan.';
+  $('aiPredictResult').textContent = '';
+  $('btnDeleteAiPredict').classList.add('hidden');
 });
 
 /* AI ASSISTANT */
