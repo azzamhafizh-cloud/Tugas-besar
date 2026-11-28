@@ -64,6 +64,36 @@
   @media(max-width:700px){#sidebar{align-items:stretch;flex-direction:column!important}#sidebar>div:first-child{padding:10px 18px 2px!important}#sidebar nav{padding:4px 12px 10px!important}#sidebar nav button{font-size:12px;padding:8px 11px!important}header>div{padding:12px 16px!important}main{padding:16px!important}.aw-feature{padding:8px 5px}.aw-feature small{white-space:normal}}
 </style>
 
+
+<style id="airwatch-soft-motion">
+  /* Gerakan halus supaya dashboard terasa lebih hidup, tanpa mengganggu pembacaan data. */
+  @keyframes awFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes awFloat{0%,100%{transform:translate3d(0,0,0)}50%{transform:translate3d(0,-12px,0)}}
+  @keyframes awDrift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-14px,10px) scale(1.06)}}
+  @keyframes awOrbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  @keyframes awShimmer{0%{background-position:0% 50%}100%{background-position:100% 50%}}
+  .aw-hero{background-size:160% 160%;animation:awShimmer 18s ease-in-out infinite alternate,awFadeUp .75s ease both}
+  .aw-hero-glow.aw-glow-one{animation:awDrift 9s ease-in-out infinite}
+  .aw-hero-glow.aw-glow-two{animation:awDrift 11s ease-in-out infinite reverse}
+  .aw-hero-orbit{animation:awFloat 6s ease-in-out infinite}
+  .aw-orbit-ring.ring-a{animation:awOrbit 32s linear infinite}
+  .aw-orbit-ring.ring-b{animation:awOrbit 42s linear infinite reverse}
+  .aw-orbit-dot{animation:pulseDot 2.4s ease-in-out infinite}
+  .aw-feature-strip{animation:awFadeUp .8s .12s ease both}
+  .aw-feature{transition:transform .25s ease,background-color .25s ease;border-radius:14px}
+  .aw-feature:hover{transform:translateY(-3px);background:#f4f7ef}
+  .aw-feature-icon{transition:transform .3s ease,background-color .3s ease}
+  .aw-feature:hover .aw-feature-icon{transform:rotate(-8deg) scale(1.08);background:#24796e}
+  #view-dashboard .grid>div,#view-analytics .grid>div,#view-ai .grid>div,#view-settings .bg-white{transition:transform .25s ease,box-shadow .25s ease}
+  @media(hover:hover){#view-dashboard .grid>div:hover,#view-analytics .grid>div:hover,#view-ai .grid>div:hover,#view-settings .bg-white:hover{transform:translateY(-4px);box-shadow:0 14px 32px rgba(32,55,48,.09)!important}}
+  .aw-hero-cta,.aw-hero-secondary{transition:transform .22s ease,box-shadow .22s ease,background-color .22s ease}
+  .aw-hero-cta:hover,.aw-hero-secondary:hover{transform:translateY(-3px);box-shadow:0 8px 20px rgba(0,0,0,.13)}
+  #sidebar nav button{transition:color .2s ease,background-color .2s ease,transform .2s ease}
+  #sidebar nav button:hover{transform:translateY(-1px)}
+  button:active{transform:scale(.98)}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+</style>
+
 </head>
 <body class="bg-zinc-100 text-zinc-900 min-h-screen">
 
