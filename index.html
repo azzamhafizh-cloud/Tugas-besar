@@ -21,6 +21,49 @@
   .pulse{animation:pulseDot 1.4s infinite}
   @media (prefers-reduced-motion:reduce){.pulse{animation:none}.bar,.sw,.sw span{transition:none}}
 </style>
+
+<style id="airwatch-editorial-redesign">
+  :root{--aw-ink:#172b2b;--aw-muted:#718080;--aw-teal:#176b63;--aw-teal-dark:#104c49;--aw-cream:#f6f3e9;--aw-line:#e8e4d9}
+  body{background:#f5f3ec!important;color:var(--aw-ink)!important}
+  /* Convert the old side navigation into the slim horizontal navigation in the reference. */
+  #sidebar{position:sticky!important;inset:0 0 auto 0!important;width:100%!important;height:auto!important;min-height:68px;transform:none!important;background:#fffdf7!important;color:#334747!important;border-bottom:1px solid var(--aw-line);box-shadow:0 5px 24px rgba(28,48,44,.045);flex-direction:row!important;align-items:center;z-index:50}
+  #sidebar>div:first-child{padding:12px 22px!important;border:0!important;flex-shrink:0}
+  #sidebar>div:first-child .w-9{background:#dcece6!important;color:#145c55!important;border-radius:12px!important}
+  #sidebar>div:first-child p.text-white{color:#183b38!important;letter-spacing:-.03em}
+  #sidebar>div:first-child p.text-zinc-500{color:#87928d!important}
+  #sidebar nav{display:flex!important;align-items:center;gap:5px!important;padding:8px 12px!important;overflow-x:auto;flex:1}
+  #sidebar nav button{width:auto!important;white-space:nowrap;padding:10px 14px!important;border-radius:999px!important;color:#52625e!important;font-weight:600}
+  #sidebar nav button:hover{background:#edf4ef!important;color:#185e55!important}
+  #sidebar .nav-btn[data-active="1"]{background:#e6f0eb!important;color:#155e55!important}
+  #sidebar>div:last-child{display:none!important}
+  .lg\:pl-64{padding-left:0!important}
+  #overlay,#menuBtn{display:none!important}
+  header{position:relative!important;background:#fffdf7!important;border:0!important;border-bottom:1px solid var(--aw-line)!important}
+  header>div{max-width:1500px;margin:auto;padding:14px 28px!important}
+  header h1{color:#193b38;font-weight:700!important;letter-spacing:-.025em}
+  header .border{border-color:#e5e8df!important;background:#f3f7f2!important}
+  main{max-width:1500px;margin:0 auto;padding:28px!important}
+  main section{scroll-margin-top:18px}
+  .aw-hero{min-height:390px;background:radial-gradient(ellipse at 78% 22%,rgba(105,184,171,.62),transparent 32%),radial-gradient(ellipse at 15% 90%,rgba(30,111,102,.8),transparent 38%),linear-gradient(115deg,#183e42 0%,#246c69 48%,#9bbeb2 100%);box-shadow:0 22px 55px rgba(23,70,65,.16)}
+  .aw-hero:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(9,35,39,.78),rgba(9,35,39,.24) 68%,rgba(9,35,39,.04));z-index:1}
+  .aw-hero:after{content:"";position:absolute;inset:auto -8% -55% 32%;height:75%;border:1px solid rgba(255,255,255,.16);border-radius:50%;transform:rotate(-13deg);box-shadow:0 0 0 28px rgba(255,255,255,.035),0 0 0 58px rgba(255,255,255,.025)}
+  .aw-hero-glow{position:absolute;border-radius:50%;filter:blur(2px);pointer-events:none}.aw-glow-one{width:260px;height:260px;right:12%;top:12%;background:rgba(185,224,207,.12)}.aw-glow-two{width:170px;height:170px;right:34%;bottom:-22%;background:rgba(5,45,48,.2)}
+  .aw-hero-cta,.aw-hero-secondary{display:inline-flex;align-items:center;gap:14px;border-radius:999px;padding:12px 19px;font-size:13px;font-weight:700;transition:.2s}
+  .aw-hero-cta{background:#fffdf7;color:#155c55}.aw-hero-cta:hover{background:#eaf4ed;transform:translateY(-1px)}.aw-hero-secondary{border:1px solid rgba(255,255,255,.45);color:white;background:rgba(255,255,255,.08);backdrop-filter:blur(8px)}.aw-hero-secondary:hover{background:rgba(255,255,255,.18)}
+  .aw-hero-orbit{position:absolute;right:8%;top:50%;width:280px;height:280px;transform:translateY(-50%);z-index:2;opacity:.9}@media(max-width:850px){.aw-hero-orbit{right:-65px;opacity:.35}}@media(max-width:600px){.aw-hero-orbit{display:none}.aw-hero{min-height:360px}.aw-hero h2{font-size:2.3rem}}
+  .aw-orbit-ring{position:absolute;inset:20px;border:1px solid rgba(255,255,255,.3);border-radius:50%;transform:rotate(-28deg) scaleY(.55)}.ring-b{inset:0;transform:rotate(55deg) scaleY(.55);border-color:rgba(255,255,255,.2)}.aw-orbit-core{position:absolute;inset:85px;border-radius:50%;background:rgba(244,250,244,.14);border:1px solid rgba(255,255,255,.35);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;flex-direction:column;box-shadow:0 15px 60px rgba(0,0,0,.12)}.aw-orbit-core span{font-size:42px;font-weight:800;letter-spacing:-.08em}.aw-orbit-core small{font-size:9px;letter-spacing:.22em;color:#d9eee5}.aw-orbit-dot{position:absolute;width:13px;height:13px;border-radius:50%;background:#d6f0d8;box-shadow:0 0 18px rgba(214,240,216,.8)}.dot-a{top:37px;left:72px}.dot-b{right:28px;top:122px}.dot-c{bottom:34px;left:104px}
+  .aw-feature{display:flex;align-items:center;gap:11px;padding:9px 13px;min-width:0}.aw-feature+.aw-feature{border-left:1px solid #eee9df}@media(max-width:767px){.aw-feature:nth-child(3){border-left:0}.aw-feature:nth-child(n+3){border-top:1px solid #eee9df}}.aw-feature-icon{display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;border-radius:50%;background:#183f3d;color:white;font-size:19px}.aw-feature b{display:block;font-size:12px;color:#243e3b}.aw-feature small{display:block;margin-top:3px;font-size:10px;color:#89918a;white-space:nowrap}
+  #banner,.bg-white.border,#view-ai .bg-zinc-950{border-radius:20px!important;box-shadow:0 8px 28px rgba(32,55,48,.055)!important}
+  #view-dashboard .grid>div.bg-white,#view-dashboard .grid>div.bg-zinc-950,#view-analytics .grid>div,#view-ai .grid>div,#view-settings .bg-white{border-radius:19px!important;border-color:var(--aw-line)!important;box-shadow:0 8px 25px rgba(32,55,48,.045)!important}
+  #view-dashboard .grid>div.bg-zinc-950{background:linear-gradient(145deg,#173e3b,#235f58)!important;border-color:#235f58!important}
+  #view-dashboard h2,#view-analytics h2,#view-settings h2,#view-ai h3{letter-spacing:-.02em}
+  button{transition:background-color .18s,border-color .18s,transform .18s}
+  #view-analytics button.bg-zinc-950,#view-settings button.bg-zinc-950,#view-ai button.bg-zinc-950{background:#176b63!important;border-radius:999px!important}#view-analytics button.bg-zinc-950:hover,#view-settings button.bg-zinc-950:hover,#view-ai button.bg-zinc-950:hover{background:#104c49!important}
+  input,select,textarea{border-radius:11px!important;border-color:#d9ded5!important}
+  footer{max-width:1500px;margin:auto;color:#9aa39b!important}
+  @media(max-width:700px){#sidebar{align-items:stretch;flex-direction:column!important}#sidebar>div:first-child{padding:10px 18px 2px!important}#sidebar nav{padding:4px 12px 10px!important}#sidebar nav button{font-size:12px;padding:8px 11px!important}header>div{padding:12px 16px!important}main{padding:16px!important}.aw-feature{padding:8px 5px}.aw-feature small{white-space:normal}}
+</style>
+
 </head>
 <body class="bg-zinc-100 text-zinc-900 min-h-screen">
 
@@ -85,6 +128,29 @@
 
   <!-- ============ VIEW 1: DASHBOARD ============ -->
   <section id="view-dashboard" class="space-y-6">
+    <!-- AIRWATCH HERO: visual direction inspired by the supplied landing-page reference -->
+    <div class="aw-hero relative overflow-hidden rounded-[28px] text-white">
+      <div class="aw-hero-glow aw-glow-one"></div><div class="aw-hero-glow aw-glow-two"></div>
+      <div class="relative z-10 max-w-3xl px-6 py-12 sm:px-10 sm:py-16">
+        <div class="inline-flex items-center gap-2 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-xs font-medium tracking-wide backdrop-blur">
+          <span class="h-2 w-2 rounded-full bg-emerald-300 pulse"></span> AIRWATCH · IOT ENVIRONMENT MONITORING
+        </div>
+        <h2 class="mt-6 max-w-2xl text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl">Pantau Kualitas Udara,<br><span class="text-teal-100">Jaga Lingkungan Tetap Sehat.</span></h2>
+        <p class="mt-4 max-w-xl text-sm leading-6 text-white/80 sm:text-base">Satu dashboard untuk memantau data sensor ESP32, membaca tren lingkungan, dan mendapatkan analisis berbasis AI dari telemetry aktual.</p>
+        <div class="mt-7 flex flex-wrap gap-3">
+          <button type="button" class="aw-hero-cta" onclick="document.querySelector('[data-view=analytics]').click()">Lihat Analitik <span aria-hidden="true">↗</span></button>
+          <button type="button" class="aw-hero-secondary" onclick="document.querySelector('[data-view=ai]').click()">Buka AI AirWatch</button>
+        </div>
+      </div>
+      <div class="aw-hero-orbit" aria-hidden="true"><div class="aw-orbit-ring ring-a"></div><div class="aw-orbit-ring ring-b"></div><div class="aw-orbit-core"><span>AW</span><small>LIVE DATA</small></div><i class="aw-orbit-dot dot-a"></i><i class="aw-orbit-dot dot-b"></i><i class="aw-orbit-dot dot-c"></i></div>
+      <div class="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-slate-950/25 to-transparent"></div>
+    </div>
+    <div class="aw-feature-strip grid grid-cols-2 gap-3 rounded-2xl border border-[#e9e4d8] bg-[#fffdf7] p-3 shadow-sm md:grid-cols-4 md:gap-0 md:p-4">
+      <div class="aw-feature"><span class="aw-feature-icon">⌁</span><div><b>Live Telemetry</b><small>Data dari ESP32</small></div></div>
+      <div class="aw-feature"><span class="aw-feature-icon">◉</span><div><b>Multi Sensor</b><small>DHT22 · PMS5003 · MQ135</small></div></div>
+      <div class="aw-feature"><span class="aw-feature-icon">✳</span><div><b>AI Intelligence</b><small>Analisis & prediksi</small></div></div>
+      <div class="aw-feature"><span class="aw-feature-icon">▤</span><div><b>Data Terintegrasi</b><small>Supabase & Vercel</small></div></div>
+    </div>
     <!-- Banner -->
     <div id="banner" class="rounded-lg border p-4 sm:p-5 flex items-start gap-4">
       <div id="bannerIcon" class="w-10 h-10 rounded-full grid place-items-center text-lg font-bold flex-shrink-0">✓</div>
